@@ -1,0 +1,126 @@
+{{define "bet_new"}}
+  {{template "base" .}}
+{{end}}
+
+{{define "content"}}
+  <h1>{{.Content.Title}}</h1>
+
+  {{if not .Header.LoggedIn}}
+    <p class="muted">Please log in to create a bet.</p>
+  {{end}}
+
+  <div class="pill" style="margin:8px 0; background:#12151b">
+    ⚠️ When you create a bet, you must list <b>all possible outcomes</b>. Example: for “Alice vs Bob”, don’t forget <i>“tie”</i>.
+  </div>
+
+  <form id="betForm" method="POST" action="/bets" style="display:grid; gap:12px; max-width:740px; margin-top:12px">
+    <label>
+      <div>Title</div>
+      <input name="title" placeholder="Bet title" required {{if not .Header.LoggedIn}}disabled{{end}}>
+    </label>
+
+    <label>
+      <div>Description</div>
+      <textarea name="description" placeholder="Describe the bet…" rows="5" style="width:100%; font:inherit; padding:8px; border-radius:8px; border:1px solid #2a2e39; background:#0f1117; color:inherit" {{if not .Header.LoggedIn}}disabled{{end}}></textarea>
+    </label>
+
+    <label>
+      <div>External link (optional)</div>
+      <input name="external_url" placeholder="https://…" {{if not .Header.LoggedIn}}disabled{{end}}>
+    </label>
+
+    <fieldset style="border:1px solid #2a2e39; border-radius:12px; padding:12px">
+      <legend>Outcomes (2–10)</legend>
+      <div id="options" style="display:grid; gap:8px">
+        <div class="row">
+          <input name="option" placeholder="Outcome 1" required {{if not .Header.LoggedIn}}disabled{{end}}>
+          <button type="button" onclick="removeOption(this)" aria-label="Remove" title="Remove" disabled>✖</button>
+        </div>
+        <div class="row">
+          <input name="option" placeholder="Outcome 2" required {{if not .Header.LoggedIn}}disabled{{end}}>
+          <button type="button" onclick="removeOption(this)" aria-label="Remove" title="Remove" disabled>✖</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button type="button" class="pill" onclick="addOption()" {{if not .Header.LoggedIn}}disabled{{end}}>+ Add outcome</button>
+        <span class="muted" id="optCountHint">2 outcomes</span>
+      </div>
+    </fieldset>
+
+    <label>
+      <div>Deadline (optional)</div>
+      <input id="deadlineLocal" type="datetime-local" name="deadline_local" {{if not .Header.LoggedIn}}disabled{{end}}>
+      <div class="muted">Time zone: <span id="tzLabel">detecting…</span></div>
+      <input type="hidden" name="deadline_utc" id="deadlineUTC">
+      <input type="hidden" name="tz" id="tz">
+    </label>
+
+    <div class="row" style="margin-top:8px">
+      <button class="primary" {{if not .Header.LoggedIn}}disabled{{end}}>Create</button>
+      <a class="pill" href="/">Cancel</a>
+    </div>
+  </form>
+
+  <script>
+    // ---- time zone detection (fallback Europe/Paris) ----
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Paris";
+    document.getElementById("tzLabel").textContent = tz;
+    document.getElementById("tz").value = tz;
+
+    // ---- options add/remove (2–10) ----
+    function updateOptionUI(){
+      const container = document.getElementById("options");
+      const rows = container.querySelectorAll(".row");
+      const count = rows.length;
+      document.getElementById("optCountHint").textContent = count + " outcome" + (count>1?"s":"");
+      // enable remove only if >2
+      rows.forEach(row => {
+        const btn = row.querySelector("button");
+        btn.disabled = (count <= 2);
+      });
+    }
+    window.addEventListener("load", updateOptionUI);
+
+    function addOption(){
+      const container = document.getElementById("options");
+      const count = container.querySelectorAll(".row").length;
+      if(count >= 10) return;
+      const div = document.createElement("div");
+      div.className = "row";
+      div.innerHTML = '<input name="option" placeholder="Outcome '+(count+1)+'" required><button type="button" onclick="removeOption(this)" aria-label="Remove" title="Remove">✖</button>';
+      container.appendChild(div);
+      updateOptionUI();
+    }
+    function removeOption(btn){
+      const container = document.getElementById("options");
+      const rows = container.querySelectorAll(".row");
+      if(rows.length <= 2) return;
+      btn.parentElement.remove();
+      updateOptionUI();
+    }
+
+    // ---- convert local deadline to UTC on submit ----
+    document.getElementById("betForm").addEventListener("submit", function(e){
+      const input = document.getElementById("deadlineLocal");
+      const out = document.getElementById("deadlineUTC");
+      if(input.value){
+        // value like "2025-03-10T12:30"
+        const local = new Date(input.value); // interpreted as local
+        // to ISO UTC string without milliseconds
+        const iso = new Date(local.getTime() - local.getTimezoneOffset()*60000).toISOString().replace(/\.\d{3}Z$/, "Z");
+        out.value = iso;
+      } else {
+        out.value = "";
+      }
+      // Also flatten options into repeated fields named "option"
+      // (already using multiple inputs named "option")
+      // Ensure we still have 2–10 non-empty options:
+      const opts = Array.from(document.querySelectorAll('input[name="option"]')).map(i => i.value.trim()).filter(Boolean);
+      if(opts.length < 2){
+        e.preventDefault();
+        alert("Please add at least 2 outcomes.");
+      }
+    });
+  </script>
+{{end}}
+

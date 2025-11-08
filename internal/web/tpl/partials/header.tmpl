@@ -1,0 +1,19 @@
+{{define "header"}}
+<header>
+  <div class="brand"><a href="/">Bets And Pedestres <span class="muted">/ alpha</span></a></div>
+  <div class="right">
+    <a class="pill" href="/transactions">Ledger</a>
+    {{if .Header.LoggedIn}}
+      <span class="pill">{{.Header.DisplayName}}</span>
+      <span class="pill">💰 {{formatCoins .Header.Balance}}</span>
+      <button onclick="doLogout()">Logout</button>
+    {{else}}
+      <form id="loginForm" class="row" onsubmit="return false">
+        <input name="username" placeholder="username" autocomplete="username" required>
+        <input name="password" type="password" placeholder="password" autocomplete="current-password" required>
+        <button class="primary" onclick="doLogin()">Login</button>
+      </form>
+    {{end}}
+  </div>
+</header>
+{{end}}

@@ -1,0 +1,13 @@
+{{define "home"}}
+  {{template "base" .}}
+{{end}}
+
+{{define "content"}}
+  <h1>Welcome{{if .Header.LoggedIn}}, {{.Header.DisplayName}}{{end}}</h1>
+  <p class="muted">Minimal homepage rendered via Go templates. We’ll extend it as features land.</p>
+
+  <div class="row" style="margin: 12px 0;">
+    <a class="pill" href="/transactions">Ledger</a>
+    <a class="pill" href="/bets/new">Create a bet</a>
+  </div>
+{{end}}

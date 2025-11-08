@@ -8,6 +8,7 @@
 *.so
 *.dylib
 
+bin/
 # Test binary, built with `go test -c`
 *.test
 
@@ -30,3 +31,5 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+config.yaml

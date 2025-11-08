@@ -1,0 +1,20 @@
+base_url: http://localhost:8080
+
+http:
+  address: :8080
+
+database:
+  # url: postgres://betsandpedestres:password@db:5432/betsandpedestres?sslmode=disable
+  host: db
+  port: 5432
+  user: betsandpedestres
+  password: password
+  name: betsandpedestres
+  sslmode: disable
+
+logging:
+  level: info
+  format: text
+
+security:
+  jwt_secret: change-me

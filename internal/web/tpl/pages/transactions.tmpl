@@ -1,0 +1,65 @@
+{{define "transactions"}}
+  {{template "base" .}}
+{{end}}
+
+{{define "content"}}
+  <h1>{{.Content.Title}}</h1>
+  <p class="muted">
+    Page {{.Content.Page}} · Size {{.Content.Size}} · Chain:
+    {{if .Content.OverallOK}}<span style="color:#72e0a8">OK</span>{{else}}<span style="color:#f87171">BROKEN</span>{{end}}
+  </p>
+
+  <div style="overflow:auto">
+    <table style="width:100%; border-collapse:collapse">
+      <thead>
+        <tr style="text-align:left; border-bottom:1px solid #2a2e39">
+          <th style="padding:8px">Time (UTC)</th>
+          <th style="padding:8px">Reason</th>
+          <th style="padding:8px">Bet</th>
+          <th style="padding:8px">Note</th>
+          <th style="padding:8px">Prev Hash</th>
+          <th style="padding:8px">Hash</th>
+          <th style="padding:8px">Entries</th>
+          <th style="padding:8px">Chain</th>
+        </tr>
+      </thead>
+      <tbody>
+      {{range .Content.Rows}}
+        <tr style="border-bottom:1px solid #2a2e39">
+          <td style="padding:8px">{{.CreatedAt.UTC}}</td>
+          <td style="padding:8px">{{.Reason}}</td>
+          <td style="padding:8px">{{if .BetID}}{{.BetID}}{{else}}—{{end}}</td>
+          <td style="padding:8px">{{if .Note}}{{.Note}}{{else}}—{{end}}</td>
+          {{if .PrevHash}}
+          <td style="padding:8px"><code style="font-size:12px; color: #{{.PrevHash | trunc 6 }}">{{.PrevHash | trunc 12 }}</code></td>
+          {{else}}
+          <td style="padding:8px"><code style="font-size:12px">{{.PrevHash }}</code></td>
+          {{end}}
+          <td style="padding:8px"><code style="font-size:12px; color: #{{.Hash | trunc 6 }}">{{.Hash | trunc 12}}</code></td>
+          <td style="padding:8px">
+            {{range .Entries}}
+              <div style="font-size:12px">
+              {{if eq .AccountKind "wallet"}}
+                <b>user</b>: {{if .DisplayName}}{{.DisplayName}}{{else}}(unknown){{end}} · Δ {{.Delta}}
+              {{else}}
+                escrow · Δ {{.Delta}}
+              {{end}}
+              </div>
+            {{end}}
+          </td>
+          <td style="padding:8px">{{if .ChainOK}}✅{{else}}❌{{end}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  <nav style="display:flex; gap:8px; margin-top:16px">
+    {{if .Content.HasPrev}}<a href="{{.PrevURL}}">← Prev</a>{{end}}
+    {{if .Content.HasNext}}<a href="{{.NextURL}}">Next →</a>{{end}}
+  </nav>
+
+  <p class="muted" style="margin-top:12px">
+    Tip: This checks continuity within the current page. Full verification requires scanning from the first transaction.
+  </p>
+{{end}}
