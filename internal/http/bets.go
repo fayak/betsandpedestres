@@ -120,6 +120,7 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		IsModerator:     isMod,
 		ResolutionMode:  modeResolve && isMod && !alreadyClosed,
 		AlreadyClosed:   alreadyClosed,
+		PastDeadline:    pastDeadline,
 		StatusLabel:     statusLabel,
 		VotesTotal:      votesTotal,
 		Quorum:          h.Quorum,

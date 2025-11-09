@@ -54,6 +54,7 @@ type betShowContent struct {
 	ResolutionMode  bool
 	IsModerator     bool
 	AlreadyClosed   bool
+	PastDeadline    bool
 	StatusLabel     string // "Open" | "Past deadline" | "Resolution in progress" | "Closed"
 	VotesTotal      int
 	Quorum          int

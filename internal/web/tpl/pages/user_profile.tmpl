@@ -54,7 +54,7 @@
     <div style="border:1px solid #2a2e39; border-radius:12px; padding:12px;">
       <h2 style="margin-top:0;">Wallet</h2>
       <p style="font-size:1.2em; margin:0;">
-        {{.Content.Wallet.Balance}} coins
+        🦶 {{.Content.Wallet.Balance}} PiedPièces
         {{if .Content.Wallet.Escrow}}
           <span class="muted">(+ {{.Content.Wallet.Escrow}} in escrow)</span>
         {{end}}
@@ -97,7 +97,7 @@
               <span class="muted">Created <span class="dt" data-iso="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span></span>
             </div>
             <div class="muted" style="margin-top:6px;">
-              Stakes: {{.Stakes}} · Deadline:
+              🦶 PiedPièces: {{.Stakes}} · Deadline:
               {{if .Deadline}}<span class="dt" data-iso="{{.Deadline.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span>{{else}}—{{end}}
             </div>
           </div>
@@ -118,7 +118,7 @@
               <strong><a href="/bets/{{.BetID}}">{{.BetTitle}}</a></strong>
               <div class="muted">Deadline: {{if .Deadline}}<span class="dt" data-iso="{{.Deadline.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span>{{else}}—{{end}}</div>
             </div>
-            <div><strong>{{.Amount}}</strong> coins</div>
+            <div><strong>🦶 {{.Amount}}</strong> PiedPièces</div>
           </div>
         {{end}}
       </div>

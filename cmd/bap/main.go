@@ -47,9 +47,9 @@ func usage() {
 	fmt.Println(`bap - betsandpedestres admin CLI
 
 Usage:
-  bap user create <username> [-display "<name>"] [-role user|moderator|admin] [-config config.yaml]
-  bap gift user <username> <amount> [-note "text"] [-config config.yaml]
-  bap gift all <amount>             [-note "text"] [-config config.yaml]
+  bap user create <username> [-display "<name>"] [-role user|moderator|admin] [-config config.yaml] [-db postgres://...]
+  bap gift user <username> <amount> [-note "text"] [-config config.yaml] [-db postgres://...]
+  bap gift all <amount>             [-note "text"] [-config config.yaml] [-db postgres://...]
 
 Examples:
   bap user create alice
@@ -75,12 +75,14 @@ func userCmd(args []string) {
 func userCreate(args []string) {
 	// Flags
 	fs := flag.NewFlagSet("user create", flag.ExitOnError)
+	fs.Init("user create", flag.ExitOnError)
 	var (
 		cfgPath     = fs.String("config", "config.yaml", "path to config file")
+		dbOverride  = fs.String("db", "", "override database connection URL")
 		displayName = fs.String("display", "", "display name (default: username)")
 		role        = fs.String("role", "user", "role: unverified|user|moderator|admin")
 	)
-	_ = fs.Parse(args)
+	_ = fs.Parse(reorderArgs(args))
 
 	rest := fs.Args()
 	if len(rest) < 1 {
@@ -113,7 +115,7 @@ func userCreate(args []string) {
 	auth.SetSecret(cfg.Security.JWTSecret)
 
 	// DB pool
-	appURL, err := cfg.Database.AppURL()
+	appURL, err := resolveDBURL(cfg, *dbOverride)
 	if err != nil {
 		log.Fatalf("db url: %v", err)
 	}
@@ -206,11 +208,13 @@ func giftCmd(args []string) {
 
 func giftUserCmd(args []string) {
 	fs := flag.NewFlagSet("gift user", flag.ExitOnError)
+	fs.Init("gift user", flag.ExitOnError)
 	var (
-		cfgPath = fs.String("config", "config.yaml", "path to config file")
-		note    = fs.String("note", "", "optional note for the transaction")
+		cfgPath    = fs.String("config", "config.yaml", "path to config file")
+		dbOverride = fs.String("db", "", "override database connection URL")
+		note       = fs.String("note", "", "optional note for the transaction")
 	)
-	_ = fs.Parse(args)
+	_ = fs.Parse(reorderArgs(args))
 
 	rest := fs.Args()
 	if len(rest) < 2 {
@@ -230,7 +234,7 @@ func giftUserCmd(args []string) {
 	}
 	auth.SetSecret(cfg.Security.JWTSecret)
 
-	appURL, err := cfg.Database.AppURL()
+	appURL, err := resolveDBURL(cfg, *dbOverride)
 	if err != nil {
 		log.Fatalf("db url: %v", err)
 	}
@@ -247,16 +251,18 @@ func giftUserCmd(args []string) {
 	if err := giftToSingleUser(ctx, pool, username, amount, *note); err != nil {
 		log.Fatalf("gift user: %v", err)
 	}
-	fmt.Printf("ok: gifted %d coin(s) to %s\n", amount, username)
+	fmt.Printf("ok: gifted %d PiedPièce(s) to %s\n", amount, username)
 }
 
 func giftAllCmd(args []string) {
 	fs := flag.NewFlagSet("gift all", flag.ExitOnError)
+	fs.Init("gift all", flag.ExitOnError)
 	var (
-		cfgPath = fs.String("config", "config.yaml", "path to config file")
-		note    = fs.String("note", "", "optional note for the transaction")
+		cfgPath    = fs.String("config", "config.yaml", "path to config file")
+		dbOverride = fs.String("db", "", "override database connection URL")
+		note       = fs.String("note", "", "optional note for the transaction")
 	)
-	_ = fs.Parse(args)
+	_ = fs.Parse(reorderArgs(args))
 
 	rest := fs.Args()
 	if len(rest) < 1 {
@@ -275,7 +281,7 @@ func giftAllCmd(args []string) {
 	}
 	auth.SetSecret(cfg.Security.JWTSecret)
 
-	appURL, err := cfg.Database.AppURL()
+	appURL, err := resolveDBURL(cfg, *dbOverride)
 	if err != nil {
 		log.Fatalf("db url: %v", err)
 	}
@@ -293,7 +299,7 @@ func giftAllCmd(args []string) {
 	if err != nil {
 		log.Fatalf("gift all: %v", err)
 	}
-	fmt.Printf("ok: gifted %d coin(s) to each of %d user(s)\n", amount, n)
+	fmt.Printf("ok: gifted %d PiedPièce(s) to each of %d user(s)\n", amount, n)
 }
 
 const houseUsername = "house"
@@ -471,4 +477,29 @@ func randomPassword(n int) string {
 		b[i] = alphabet[idxBig.Int64()]
 	}
 	return string(b)
+}
+
+func resolveDBURL(cfg *config.Config, override string) (string, error) {
+	if strings.TrimSpace(override) != "" {
+		return override, nil
+	}
+	return cfg.Database.AppURL()
+}
+
+func reorderArgs(args []string) []string {
+	var flags []string
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if len(arg) > 0 && arg != "-" && arg != "--" && arg[0] == '-' {
+			flags = append(flags, arg)
+			if !strings.Contains(arg, "=") && i+1 < len(args) && (len(args[i+1]) == 0 || args[i+1][0] != '-') {
+				flags = append(flags, args[i+1])
+				i++
+			}
+		} else {
+			positional = append(positional, arg)
+		}
+	}
+	return append(flags, positional...)
 }

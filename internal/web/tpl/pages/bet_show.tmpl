@@ -58,7 +58,7 @@
             <input type="radio" name="option_id" value="{{.ID}}" required>
           </div>
           <div class="row" style="gap:10px; margin-top:6px; flex-wrap:wrap;">
-            <span class="pill">💰 Stakes: {{.Stakes}}</span>
+            <span class="pill">🦶 Stakes: {{.Stakes}} PiedPièces</span>
             <span class="pill">Ratio: {{.Ratio}}</span>
           </div>
           {{if .Bettors}}
@@ -75,9 +75,12 @@
       {{end}}
     </div>
 
-    <div class="row" style="gap:8px">
-      <button class="primary" style="background:#ef4444">Confirm outcome</button>
+    <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
+      <button class="primary" style="background:{{if .Content.PastDeadline}}#ef4444{{else}}#4b5563{{end}}; cursor:{{if .Content.PastDeadline}}pointer{{else}}not-allowed{{end}}" {{if not .Content.PastDeadline}}disabled title="You can only resolve once the deadline has passed."{{end}}>Confirm outcome</button>
       <a class="pill" href="/bets/{{.Content.BetID}}">Cancel</a>
+      {{if not .Content.PastDeadline}}
+        <span class="muted">You can resolve once the bet deadline is over.</span>
+      {{end}}
     </div>
   </form>
 
@@ -94,7 +97,7 @@
             {{end}}
           </div>
           <div class="row" style="gap:10px; margin-top:6px; flex-wrap:wrap;">
-            <span class="pill">💰 Stakes: {{.Stakes}}</span>
+            <span class="pill">🦶 Stakes: {{.Stakes}} PiedPièces</span>
             <span class="pill">Ratio: {{.Ratio}}</span>
           </div>
           {{if .Bettors}}
@@ -120,7 +123,7 @@
     {{if and $.Content.CanWager (not $.Content.AlreadyClosed)}}
       <div style="display:grid; gap:10px; max-width:420px; margin-top:8px;">
         <label>
-          <div>Amount (max: <span id="maxStake">{{.Content.MaxStake}}</span>)</div>
+          <div>Amount (max: 🦶 <span id="maxStake">{{.Content.MaxStake}}</span> PiedPièces)</div>
           <input id="amount" name="amount" type="number" min="1" max="{{.Content.MaxStake}}" required>
         </label>
         <input type="hidden" name="idempotency_key" id="idemp" value="{{.Content.IdempotencyKey}}">
@@ -150,7 +153,7 @@
   <h3>Payouts</h3>
   <ul>
     {{range .Content.Payouts}}
-      <li>{{if .Username}}<a href="/profile/{{.Username}}">{{.Name}}</a>{{else}}{{.Name}}{{end}} — +{{.Amount}}</li>
+      <li>{{if .Username}}<a href="/profile/{{.Username}}">{{.Name}}</a>{{else}}{{.Name}}{{end}} — 🦶 +{{.Amount}} PiedPièces</li>
     {{end}}
   </ul>
 {{end}}

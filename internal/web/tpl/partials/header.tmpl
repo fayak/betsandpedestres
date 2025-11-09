@@ -5,7 +5,7 @@
     {{if .Header.LoggedIn}}
       <a class="pill" href="/transactions">Ledger</a>
       <a class="pill" href="/profile">{{.Header.DisplayName}}</a>
-      <span class="pill">💰 {{formatCoins .Header.Balance}}</span>
+      <span class="pill">🦶 {{formatCoins .Header.Balance}} PiedPièces</span>
       <button onclick="doLogout()">Logout</button>
     {{else}}
       <form id="loginForm" class="row" onsubmit="return false">
