@@ -60,30 +60,32 @@
         {{end}}
       </p>
     </div>
-    <div style="border:1px solid #2a2e39; border-radius:12px; padding:12px;">
-      <h2 style="margin-top:0;">Telegram</h2>
-      <p><strong>Chat ID:</strong>
-        {{if .Content.Target.TelegramChatID}}
-          {{.Content.Target.TelegramChatID}}
-        {{else}}
-          <span class="muted">&lt;none&gt;</span>
-        {{end}}
-      </p>
-      <p><strong>Your user ID:</strong> <code>{{.Content.Target.ID}}</code></p>
-      <p class="muted" style="display:flex; flex-direction:column; gap:6px;">
-        Send this command to
-        <a href="https://t.me/betsandpedestres_bot" target="_blank" rel="noopener">@betsandpedestres_bot</a>:
-        <span style="display:inline-flex; align-items:center; gap:8px;">
-          <span class="pill" style="background:#4b2e22; border:1px solid #f97316; color:#fbd38d; font-family:monospace;">
-            /register {{.Content.Target.ID}}
+    {{if .Content.ShowTelegram}}
+      <div style="border:1px solid #2a2e39; border-radius:12px; padding:12px;">
+        <h2 style="margin-top:0;">Telegram</h2>
+        <p><strong>Chat ID:</strong>
+          {{if .Content.Target.TelegramChatID}}
+            {{.Content.Target.TelegramChatID}}
+          {{else}}
+            <span class="muted">&lt;none&gt;</span>
+          {{end}}
+        </p>
+        <p><strong>Your user ID:</strong> <code>{{.Content.Target.ID}}</code></p>
+        <p class="muted" style="display:flex; flex-direction:column; gap:6px;">
+          Send this command to
+          <a href="https://t.me/betsandpedestres_bot" target="_blank" rel="noopener">@betsandpedestres_bot</a>:
+          <span style="display:inline-flex; align-items:center; gap:8px;">
+            <span class="pill" style="background:#4b2e22; border:1px solid #f97316; color:#fbd38d; font-family:monospace;">
+              /register {{.Content.Target.ID}}
+            </span>
+            <button type="button" class="pill" style="background:#f97316; border:0; color:#1f1f1f;" onclick="copyRegisterCommand('{{.Content.Target.ID}}')">
+              Copy
+            </button>
           </span>
-          <button type="button" class="pill" style="background:#f97316; border:0; color:#1f1f1f;" onclick="copyRegisterCommand('{{.Content.Target.ID}}')">
-            Copy
-          </button>
-        </span>
-        <span id="copyNotice" class="muted" style="display:none;">Copied to clipboard ✓</span>
-      </p>
-    </div>
+          <span id="copyNotice" class="muted" style="display:none;">Copied to clipboard ✓</span>
+        </p>
+      </div>
+    {{end}}
   </section>
 
   <section style="margin-bottom:24px;">

@@ -75,6 +75,7 @@ type profileContent struct {
 	UserOptions      []profileUserOption
 	CanEditRoles     bool
 	RoleUpdateStatus string
+	ShowTelegram     bool
 }
 
 func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -193,6 +194,7 @@ func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		UserOptions:      userOptions,
 		RoleUpdateStatus: r.URL.Query().Get("role"),
 		CanEditRoles:     role == middleware.RoleAdmin,
+		ShowTelegram:     targetUsername == header.Username,
 	}
 
 	page := web.Page[profileContent]{Header: header, Content: content}
