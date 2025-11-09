@@ -34,10 +34,6 @@ func (r *Renderer) Render(w io.Writer, name string, data any) error {
 	return t.ExecuteTemplate(w, name, data)
 }
 
-func formatCoins(v int64) string {
-	return strconvFormat(v)
-}
-
 func strconvFormat(v int64) string {
 	neg := v < 0
 	if neg {

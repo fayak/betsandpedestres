@@ -32,6 +32,7 @@ type TxRow struct {
 	ID        string
 	Reason    string
 	BetID     *string
+	BetTitle  *string
 	Note      *string
 	CreatedAt time.Time
 	PrevHash  *string
@@ -140,6 +141,7 @@ func (h *TransactionsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		t.Entries = ents
 
 		list = append(list, t)
+
 		accIDs := make(map[string]struct{})
 		userIDs := make(map[string]struct{})
 		for i := range list {
@@ -254,10 +256,56 @@ func (h *TransactionsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			list[i].Entries = enriched
 		}
 	}
+
 	if err := rows.Err(); err != nil {
 		slog.Error("transactions.rows_err", "err", err)
 		http.Error(w, "db rows error", http.StatusInternalServerError)
 		return
+	}
+	betIDs := make(map[string]struct{})
+	for i := range list {
+		if list[i].BetID != nil {
+			betIDs[*list[i].BetID] = struct{}{}
+		}
+	}
+	if len(betIDs) > 0 {
+		idSlice := make([]string, 0, len(betIDs))
+		for id := range betIDs {
+			idSlice = append(idSlice, id)
+		}
+
+		bt := map[string]string{}
+		rowsB, err := h.DB.Query(ctx, `
+		select id::text, title
+		from bets
+		where id = any($1::uuid[])
+	`, idSlice)
+		if err != nil {
+			slog.Error("transactions.bets.query", "err", err)
+			http.Error(w, "db error", http.StatusInternalServerError)
+			return
+		}
+		for rowsB.Next() {
+			var id, title string
+			if err := rowsB.Scan(&id, &title); err != nil {
+				slog.Error("transactions.bets.scan", "err", err)
+				http.Error(w, "db error", http.StatusInternalServerError)
+				return
+			}
+			bt[id] = title
+		}
+		if err := rowsB.Err(); err != nil {
+			slog.Error("transactions.bets.rows_err", "err", err)
+			http.Error(w, "db rows error", http.StatusInternalServerError)
+			return
+		}
+		for i := range list {
+			if list[i].BetID != nil {
+				if t, ok := bt[*list[i].BetID]; ok {
+					list[i].BetTitle = &t
+				}
+			}
+		}
 	}
 
 	hasNext := false
@@ -274,7 +322,9 @@ func (h *TransactionsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 		ok := (list[i].PrevHash != nil && *list[i].PrevHash == list[i+1].Hash)
 		list[i].ChainOK = ok
-		if !ok { overallOK = false }
+		if !ok {
+			overallOK = false
+		}
 	}
 
 	content := TxContent{
@@ -312,8 +362,6 @@ func parseIntDefault(s string, def int) int {
 	}
 	return n
 }
-
-func itoa(n int) string { return strconv.Itoa(n) }
 
 type entryJSON struct {
 	AccountID string  `json:"account_id"`

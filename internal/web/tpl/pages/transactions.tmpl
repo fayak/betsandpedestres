@@ -26,9 +26,9 @@
       <tbody>
       {{range .Content.Rows}}
         <tr style="border-bottom:1px solid #2a2e39">
-          <td style="padding:8px">{{.CreatedAt.UTC}}</td>
+          <td style="padding:8px"><span class="dt" data-iso="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z07:00" }}"></span></td>
           <td style="padding:8px">{{.Reason}}</td>
-          <td style="padding:8px">{{if .BetID}}{{.BetID}}{{else}}—{{end}}</td>
+          <td style="padding:8px">{{if .BetID}}{{if .BetTitle}}<a href="/bets/{{.BetID}}">{{.BetTitle}}</a>{{else}}{{.BetID}}{{end}}{{else}}—{{end}}</td>
           <td style="padding:8px">{{if .Note}}{{.Note}}{{else}}—{{end}}</td>
           {{if .PrevHash}}
           <td style="padding:8px"><code style="font-size:12px; color: #{{.PrevHash | trunc 6 }}">{{.PrevHash | trunc 12 }}</code></td>

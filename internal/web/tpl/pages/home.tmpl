@@ -3,11 +3,68 @@
 {{end}}
 
 {{define "content"}}
-  <h1>Welcome{{if .Header.LoggedIn}}, {{.Header.DisplayName}}{{end}}</h1>
-  <p class="muted">Minimal homepage rendered via Go templates. We’ll extend it as features land.</p>
+  <h1>{{.Content.Title}}</h1>
 
-  <div class="row" style="margin: 12px 0;">
-    <a class="pill" href="/transactions">Ledger</a>
+  <form method="GET" action="/" class="row" style="gap:12px; margin:12px 0; flex-wrap:wrap">
+    <label>Sort
+      <select name="sort" onchange="this.form.submit()">
+        {{range .Content.SortChoices}}
+          <option value="{{.Key}}" {{if eq $.Content.Sort .Key}}selected{{end}}>{{.Label}}</option>
+        {{end}}
+      </select>
+    </label>
+
+    <label>Creator
+      <select name="user" onchange="this.form.submit()">
+        <option value="" {{if eq .Content.UserFilter ""}}selected{{end}}>(All)</option>
+        {{range .Content.Creators}}
+          <option value="{{.Username}}" {{if eq $.Content.UserFilter .Username}}selected{{end}}>{{.DisplayName}}</option>
+        {{end}}
+      </select>
+    </label>
+
+    <label>Participation
+      <select name="p" {{if not .Header.LoggedIn}}disabled{{end}} onchange="this.form.submit()">
+        <option value="all"   {{if eq .Content.PartFilter "all"}}selected{{end}}>All bets</option>
+        <option value="me"    {{if eq .Content.PartFilter "me"}}selected{{end}}>I participated</option>
+        <option value="notme" {{if eq .Content.PartFilter "notme"}}selected{{end}}>I didn't</option>
+      </select>
+    </label>
+
+    <input type="hidden" name="page" value="{{.Content.Page}}">
+    <input type="hidden" name="size" value="{{.Content.Size}}">
+    <a class="pill" href="/">Reset</a>
     <a class="pill" href="/bets/new">Create a bet</a>
+    <a class="pill" href="/transactions">Ledger</a>
+    <span class="muted">Times shown in <span class="js-tz">your timezone</span></span>
+  </form>
+
+  <div style="display:grid; gap:12px;">
+    {{range .Content.Rows}}
+      <div style="border:1px solid #2a2e39; border-radius:12px; padding:12px; background:#13151a;">
+        <div class="row" style="justify-content:space-between; align-items:baseline">
+          <h3 style="margin:0"><a href="/bets/{{.ID}}">{{.Title}}</a></h3>
+          <span class="muted">by {{.CreatorName}}</span>
+        </div>
+
+        <div class="row" style="gap:12px; margin-top:6px; flex-wrap:wrap">
+          <span class="pill">Options:
+            {{range $i, $opt := .Options}}{{if $i}}, {{end}}{{$opt}}{{end}}
+          </span>
+          <span class="pill">💰 Stakes: {{.Stakes}}</span>
+          <span class="pill">👥 Participants: {{.Participants}}</span>
+          <span class="pill">Created: <span class="dt" data-iso="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span></span>
+          <span class="pill">Deadline: {{if .Deadline}}<span class="dt" data-iso="{{.Deadline.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span>{{else}}—{{end}}</span>
+        </div>
+      </div>
+    {{else}}
+      <p class="muted">No bets found.</p>
+    {{end}}
   </div>
+
+  <nav style="display:flex; gap:8px; margin-top:16px">
+    {{if .Content.HasPrev}}<a href="{{.Content.PrevURL}}">← Prev</a>{{end}}
+    {{if .Content.HasNext}}<a href="{{.Content.NextURL}}">Next →</a>{{end}}
+  </nav>
 {{end}}
+

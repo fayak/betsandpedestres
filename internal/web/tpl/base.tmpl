@@ -39,6 +39,24 @@
     if(res.ok){ location.reload(); } else { alert('Logout failed'); }
   }
   </script>
+    <script>
+  // Set timezone label(s)
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Paris";
+  document.querySelectorAll('.js-tz').forEach(el => el.textContent = tz);
+
+  // Format all .dt elements to local time without milliseconds, with TZ short name.
+  function fmtAllDates(){
+    const opts = { year:'numeric', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZoneName:'short' };
+    document.querySelectorAll('.dt').forEach(el => {
+      const iso = el.getAttribute('data-iso');
+      if(!iso) return;
+      const d = new Date(iso);
+      el.textContent = d.toLocaleString(undefined, opts);
+    });
+  }
+  document.addEventListener('DOMContentLoaded', fmtAllDates);
+  </script>
+
 </body>
 </html>
 {{end}}

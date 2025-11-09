@@ -21,8 +21,10 @@ func NewMux(db *pgxpool.Pool) (*http.ServeMux, error) {
 	mux.Handle("GET /", &HomeHandler{DB: db, TPL: rend})
 	mux.Handle("GET /transactions", &TransactionsHandler{DB: db, TPL: rend})
 	mux.Handle("GET /bets/new", &BetNewHandler{DB: db, TPL: rend})
-	mux.Handle("POST /bets",    &BetCreateHandler{DB: db})
+	mux.Handle("POST /bets", &BetCreateHandler{DB: db})
 	mux.Handle("GET /bets/{id}", &BetShowHandler{DB: db, TPL: rend})
+	mux.Handle("POST /bets/{id}/wagers", &BetWagerCreateHandler{DB: db})
+	mux.Handle("POST /bets/{id}/resolve", &BetResolveHandler{DB: db})
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

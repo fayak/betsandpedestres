@@ -55,8 +55,7 @@ Examples:
   bap user create alice
   bap user create bob -display "Bob Builder" -role moderator -config ./config.yaml
   bap gift user alice 100 -note "welcome bonus"
-  bap gift all 25 -note "launch airdrop"
-`)
+  bap gift all 25 -note "launch airdrop"`)
 }
 
 func userCmd(args []string) {

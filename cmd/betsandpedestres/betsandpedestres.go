@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -70,31 +72,62 @@ func main() {
 		slog.Error("Coulnd't parse templates", "err", err)
 		os.Exit(1)
 	}
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+	defer rootCancel()
 	srv := &http.Server{
-		Addr:         cfg.HTTP.Address, // e.g. ":8080"
+		Addr:         cfg.HTTP.Address,
 		Handler:      apphttp.WithStandardMiddleware(mux),
+		BaseContext:  func(l net.Listener) context.Context { return rootCtx },
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Start
+	serverErr := make(chan error, 1)
 	go func() {
-		slog.Info("http.starting", "addr", cfg.HTTP.Address)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("http.listen", "err", err)
+		slog.Info("http.listening", "addr", srv.Addr)
+		serverErr <- srv.ListenAndServe()
+	}()
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	select {
+	case <-sigCtx.Done():
+		slog.Info("http.shutting_down")
+	case err := <-serverErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("http.failed", "err", err)
+			// close pool before exiting on fatal serve error
+			pool.Close()
 			os.Exit(1)
 		}
-	}()
+	}
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
-
-	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+	shCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if err := srv.Shutdown(shCtx); err != nil {
+		slog.Warn("http.shutdown_error", "err", err)
+	}
+	select {
+	case err := <-serverErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Warn("http.serve_returned", "err", err)
+		}
+	case <-time.After(3 * time.Second):
+		slog.Warn("http.serve_wait_timeout")
+	}
 
-	slog.Info("http.shutting_down")
-	_ = srv.Shutdown(ctx)
 	slog.Info("http.stopped")
+	st := pool.Stat()
+	slog.Info("pgxpool.stats",
+		"total", st.TotalConns(),
+		"acquired", st.AcquiredConns(),
+		"idle", st.IdleConns(),
+		"constructing", st.ConstructingConns(),
+		"acquire_count", st.AcquireCount(),
+		"canceled_acquire_count", st.CanceledAcquireCount(),
+	)
+
+	pool.Close()
+	slog.Info("pool.closed")
 }
