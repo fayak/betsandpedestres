@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"betsandpedestres/internal/http/middleware"
+	"betsandpedestres/internal/notify"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v5"
 )
@@ -155,7 +157,7 @@ func (h *BetWagerCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 
 	if h.Notifier != nil {
 		link := betLink(h.BaseURL, betID)
-		groupMsg := fmt.Sprintf("%s wagered 🦶 %d PiedPièces on \"%s\" (option: %s)\n%s", bettorName, amount, betTitle, optionLabel, link)
+		groupMsg := formatWagerGroupMessage(bettorName, amount, betTitle, link)
 		h.Notifier.NotifyGroup(r.Context(), groupMsg)
 		if creatorID != "" && creatorID != uid {
 			userMsg := fmt.Sprintf("Your bet \"%s\" received a new wager from %s: 🦶 %d PiedPièces on %s.\n%s", betTitle, bettorName, amount, optionLabel, link)
@@ -198,4 +200,39 @@ func randomHex(n int) string {
 		return fmt.Sprintf("%x", ts)
 	}
 	return fmt.Sprintf("%x", b)
+}
+
+func formatWagerGroupMessage(bettor string, amount int64, betTitle, link string) string {
+	safeBettor := html.EscapeString(strings.TrimSpace(bettor))
+	if safeBettor == "" {
+		safeBettor = "Anonymous"
+	}
+	safeTitle := html.EscapeString(betTitle)
+	safeLink := html.EscapeString(link)
+	emojis := wagerEmojis(amount)
+	if emojis != "" {
+		emojis = " " + emojis
+	}
+	msg := fmt.Sprintf("<strong>%s</strong> wagered 🦶 %d PiedPièces%s on <strong><a href=\"%s\">%s</a></strong> !", safeBettor, amount, emojis, safeLink, safeTitle)
+	return notify.HTMLPrefix + msg
+}
+
+func wagerEmojis(amount int64) string {
+	var b strings.Builder
+	if amount > 10 {
+		b.WriteString("🤑")
+	}
+	if amount > 20 {
+		b.WriteString("💵")
+	}
+	if amount > 30 {
+		b.WriteString("💶")
+	}
+	if amount > 40 {
+		b.WriteString("💰")
+	}
+	if amount > 50 {
+		b.WriteString("💀")
+	}
+	return b.String()
 }

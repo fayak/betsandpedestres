@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -107,7 +108,8 @@ func (h *BetCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if h.Notifier != nil {
 		link := betLink(h.BaseURL, betID)
-		message := fmt.Sprintf("New bet created: %s\n%s", form.Title, link)
+		author := fetchDisplayName(ctx, h.DB, uid)
+		message := formatNewBetGroupMessage(form, author, link)
 		h.Notifier.NotifyGroup(r.Context(), message)
 		h.Notifier.NotifyUser(r.Context(), uid, fmt.Sprintf("Your bet \"%s\" is live!\n%s", form.Title, link))
 	}
@@ -225,6 +227,61 @@ func (h *BetCreateHandler) createBet(ctx context.Context, uid string, form betFo
 		return "", err
 	}
 	return betID, nil
+}
+
+func fetchDisplayName(ctx context.Context, db *pgxpool.Pool, uid string) string {
+	if db == nil || uid == "" {
+		return "Anonymous"
+	}
+	var name string
+	if err := db.QueryRow(ctx, `select coalesce(nullif(display_name,''), username) from users where id = $1::uuid`, uid).Scan(&name); err != nil {
+		return "Anonymous"
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "Anonymous"
+	}
+	return name
+}
+
+func formatNewBetGroupMessage(form betForm, authorName, link string) string {
+	safeTitle := html.EscapeString(form.Title)
+	safeAuthor := html.EscapeString(authorName)
+	safeLink := html.EscapeString(link)
+	var builder strings.Builder
+	builder.WriteString(notify.HTMLPrefix)
+	builder.WriteString(fmt.Sprintf("New bet ! <strong><a href=\"%s\">%s</a></strong> ! 👀\n", safeLink, safeTitle))
+	builder.WriteString(fmt.Sprintf("Submitted by %s.\n", safeAuthor))
+	desc := truncateRunes(form.Description, 200)
+	if desc != "" {
+		builder.WriteString("\n")
+		builder.WriteString(html.EscapeString(desc))
+		builder.WriteString("\n")
+	}
+	builder.WriteString("\nOptions:\n")
+	for _, opt := range form.Options {
+		builder.WriteString("- ")
+		builder.WriteString(html.EscapeString(opt))
+		builder.WriteString("\n")
+	}
+	if form.Deadline != nil {
+		builder.WriteString("\n 📅 deadline: ")
+		builder.WriteString(form.Deadline.UTC().Format("02 Jan 2006 15:04 MST"))
+		builder.WriteString("\n")
+	}
+	builder.WriteString("\nGo vote ! 🗳️")
+	return builder.String()
+}
+
+func truncateRunes(s string, max int) string {
+	if max <= 0 || s == "" {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + "…"
 }
 
 func (h *BetCreateHandler) insertBet(ctx context.Context, tx pgx.Tx, uid string, form betForm) (string, error) {
