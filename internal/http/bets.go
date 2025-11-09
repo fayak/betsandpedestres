@@ -12,7 +12,6 @@ import (
 	"betsandpedestres/internal/http/middleware"
 	"betsandpedestres/internal/web"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func nullIfEmpty(s string) any {
@@ -20,11 +19,6 @@ func nullIfEmpty(s string) any {
 		return nil
 	}
 	return s
-}
-
-type BetShowHandler struct {
-	DB  *pgxpool.Pool
-	TPL *web.Renderer
 }
 
 func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -142,24 +136,43 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var votesTotal int
+	var myVote *string
+	if isMod {
+		_ = h.DB.QueryRow(ctx, `
+        select option_id::text
+        from bet_resolution_votes
+        where bet_id = $1::uuid and user_id = $2::uuid
+    `, betID, uid).Scan(&myVote)
+	}
+	_ = h.DB.QueryRow(ctx, `
+    select count(*)::int from bet_resolution_votes where bet_id = $1::uuid
+`, betID).Scan(&votesTotal)
+
+	// ----- Determine status label -----
+	now := time.Now().UTC()
+	pastDeadline := (deadline != nil && deadline.Before(now) && (winning == nil) && status == "open")
+	resolutionInProgress := (votesTotal > 0 && winning == nil && status == "open")
 	alreadyClosed := (status != "open") || (winning != nil)
+
+	statusLabel := "Open"
+	switch {
+	case alreadyClosed:
+		statusLabel = "Closed"
+	case pastDeadline:
+		statusLabel = "Past the deadline"
+	case resolutionInProgress:
+		statusLabel = "Resolution in progress"
+	}
 
 	// compute user's max stake
 	var maxStake int64
-	canWager := header.LoggedIn && !modeResolve && !alreadyClosed
-	if canWager {
-		_ = h.DB.QueryRow(ctx, `select coalesce(balance,0) from user_balances where user_id = $1`, uid).Scan(&maxStake)
-	}
 	if header.LoggedIn {
 		_ = h.DB.QueryRow(ctx, `select coalesce(balance,0) from user_balances where user_id = $1`, header.Username /* wrong: needs user_id */).Scan(new(any))
 		// Use uid (user id), not username:
 		_ = h.DB.QueryRow(ctx, `select coalesce(balance,0) from user_balances where user_id = $1`, uid).Scan(&maxStake)
 	}
 
-	// idempotency token for the form
-	idk := randomHex(16)
-
-	// build options + bettors (same query you have), then:
 	var total int64
 	for _, o := range opts {
 		total += o.Stakes
@@ -168,22 +181,98 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		opts[i].Ratio = computeRatio(opts[i].Stakes, total-opts[i].Stakes)
 	}
 
+	canWager := header.LoggedIn && !modeResolve && !alreadyClosed && !pastDeadline
+	if canWager {
+		_ = h.DB.QueryRow(ctx, `select coalesce(balance,0) from user_balances where user_id = $1`, uid).Scan(&maxStake)
+	}
+
+	var winningLabel *string
+	if winning != nil {
+		var lbl string
+		if err := h.DB.QueryRow(ctx, `select label from bet_options where id = $1::uuid`, *winning).Scan(&lbl); err == nil {
+			winningLabel = &lbl
+		}
+	}
+
+	var payouts []payoutVM
+	if alreadyClosed && winning != nil {
+		// recompute actual intended payouts (matches finalize logic)
+		var escrowTotal int64
+		_ = h.DB.QueryRow(ctx, `
+        select coalesce(sum(amount),0)::bigint from wagers where bet_id = $1::uuid
+    `, betID).Scan(&escrowTotal)
+
+		var winTotal int64
+		_ = h.DB.QueryRow(ctx, `
+        select coalesce(sum(amount),0)::bigint from wagers where bet_id = $1::uuid and option_id = $2::uuid
+    `, betID, *winning).Scan(&winTotal)
+
+		if winTotal > 0 && escrowTotal > 0 {
+			rowsP, err := h.DB.Query(ctx, `
+            select u.display_name, sum(w.amount)::bigint
+            from wagers w
+            join users u on u.id = w.user_id
+            where w.bet_id = $1::uuid and w.option_id = $2::uuid
+            group by u.display_name
+            order by sum(w.amount) desc
+        `, betID, *winning)
+			if err == nil {
+				defer rowsP.Close()
+				// integer proportional split (same as finalize, last gets remainder)
+				var tmp []struct {
+					Name string
+					Amt  int64
+				}
+				for rowsP.Next() {
+					var n string
+					var a int64
+					if err := rowsP.Scan(&n, &a); err != nil {
+						break
+					}
+					tmp = append(tmp, struct {
+						Name string
+						Amt  int64
+					}{n, a})
+				}
+				if rowsP.Err() == nil && len(tmp) > 0 {
+					var distributed int64
+					for i, t := range tmp {
+						share := (escrowTotal * t.Amt) / winTotal
+						if i == len(tmp)-1 {
+							share = escrowTotal - distributed
+						} else {
+							distributed += share
+						}
+						payouts = append(payouts, payoutVM{Name: t.Name, Amount: share})
+					}
+				}
+			}
+		}
+	}
+
 	content := betShowContent{
-		BetID:           betID,
-		Title:           title,
-		Description:     desc,
-		ExternalURL:     ext,
-		Deadline:        deadline,
-		Options:         opts,
-		TotalStakes:     total,
-		CreatorName:     creatorName,
-		CanWager:        canWager,
-		MaxStake:        maxStake,
-		IdempotencyKey:  idk,
-		ResolutionMode:  modeResolve && isMod && !alreadyClosed,
+		BetID:          betID,
+		Title:          title,
+		Description:    desc,
+		ExternalURL:    ext,
+		Deadline:       deadline,
+		Options:        opts,
+		TotalStakes:    total,
+		CreatorName:    creatorName,
+		CanWager:       canWager,
+		MaxStake:       maxStake,
+		IdempotencyKey: randomHex(16),
+
 		IsModerator:     isMod,
+		ResolutionMode:  modeResolve && isMod && !alreadyClosed,
 		AlreadyClosed:   alreadyClosed,
+		StatusLabel:     statusLabel,
+		VotesTotal:      votesTotal,
+		Quorum:          h.Quorum,
+		MyVoteOptionID:  myVote,
 		WinningOptionID: winning,
+		WinningLabel:    winningLabel,
+		Payouts:         payouts,
 	}
 
 	page := web.Page[betShowContent]{Header: header, Content: content}

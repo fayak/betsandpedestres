@@ -67,7 +67,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	mux, err := apphttp.NewMux(pool)
+	mux, err := apphttp.NewMux(pool, cfg)
 	if err != nil {
 		slog.Error("Coulnd't parse templates", "err", err)
 		os.Exit(1)

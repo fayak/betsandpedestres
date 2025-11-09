@@ -11,7 +11,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type BetResolveHandler struct{ DB *pgxpool.Pool }
+type BetResolveHandler struct {
+	DB     *pgxpool.Pool
+	Quorum int
+}
 
 func (h *BetResolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r)
@@ -101,7 +104,7 @@ func (h *BetResolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if votes >= 2 && agreed {
+	if votes >= h.Quorum && agreed {
 		// find the agreed option
 		var winOpt string
 		if err := tx.QueryRow(ctx, `

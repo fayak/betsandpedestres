@@ -6,6 +6,10 @@ import (
 	"strconv"
 )
 
+type Moderation struct {
+	Quorum int `yaml:"quorum"`
+}
+
 type Config struct {
 	BaseURL string `yaml:"base_url"`
 
@@ -23,6 +27,8 @@ type Config struct {
 	Security struct {
 		JWTSecret string `yaml:"jwt_secret"`
 	} `yaml:"security"`
+
+	Moderation Moderation `yaml:"moderation"`
 }
 
 type DatabaseConfig struct {
@@ -66,6 +72,9 @@ func (c *Config) Defaults() {
 	if c.Security.JWTSecret == "" {
 		c.Security.JWTSecret = "change-me"
 	}
+	if c.Moderation.Quorum == 0 {
+		c.Moderation.Quorum = 2
+	}
 }
 
 func (c *Config) Validate() error {
@@ -75,6 +84,9 @@ func (c *Config) Validate() error {
 		if c.Database.Host == "" || c.Database.User == "" || c.Database.Name == "" {
 			errs = append(errs, "database.url or database.{host,user,name} must be set")
 		}
+	}
+	if c.Moderation.Quorum <= 0 {
+		errs = append(errs, "moderation.quorum must be >= 1")
 	}
 	if len(errs) > 0 {
 		return errors.New(joinErrs(errs))

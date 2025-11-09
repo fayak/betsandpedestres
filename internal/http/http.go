@@ -5,12 +5,13 @@ import (
 	"net/http"
 	"time"
 
+	"betsandpedestres/internal/config"
 	"betsandpedestres/internal/http/middleware"
 	"betsandpedestres/internal/web"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewMux(db *pgxpool.Pool) (*http.ServeMux, error) {
+func NewMux(db *pgxpool.Pool, cfg *config.Config) (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 
 	rend, err := web.NewRenderer()
@@ -22,9 +23,9 @@ func NewMux(db *pgxpool.Pool) (*http.ServeMux, error) {
 	mux.Handle("GET /transactions", &TransactionsHandler{DB: db, TPL: rend})
 	mux.Handle("GET /bets/new", &BetNewHandler{DB: db, TPL: rend})
 	mux.Handle("POST /bets", &BetCreateHandler{DB: db})
-	mux.Handle("GET /bets/{id}", &BetShowHandler{DB: db, TPL: rend})
+	mux.Handle("GET /bets/{id}", &BetShowHandler{DB: db, TPL: rend, Quorum: cfg.Moderation.Quorum})
 	mux.Handle("POST /bets/{id}/wagers", &BetWagerCreateHandler{DB: db})
-	mux.Handle("POST /bets/{id}/resolve", &BetResolveHandler{DB: db})
+	mux.Handle("POST /bets/{id}/resolve", &BetResolveHandler{DB: db, Quorum: cfg.Moderation.Quorum})
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

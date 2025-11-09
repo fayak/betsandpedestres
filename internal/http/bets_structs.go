@@ -50,5 +50,23 @@ type betShowContent struct {
 	ResolutionMode  bool
 	IsModerator     bool
 	AlreadyClosed   bool
+	StatusLabel     string // "Open" | "Past deadline" | "Resolution in progress" | "Closed"
+	VotesTotal      int
+	Quorum          int
+	MyVoteOptionID  *string
 	WinningOptionID *string
+	WinningLabel    *string
+
+	Payouts []payoutVM
+}
+
+type payoutVM struct {
+	Name   string
+	Amount int64
+}
+
+type BetShowHandler struct {
+	DB     *pgxpool.Pool
+	TPL    *web.Renderer
+	Quorum int
 }
