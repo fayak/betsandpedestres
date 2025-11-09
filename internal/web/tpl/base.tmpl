@@ -8,7 +8,7 @@
   <style>
     :root { --pad:16px; --bg:#0b0c10; --fg:#eaf0f6; --muted:#9aa6b2; --card:#13151a; --accent:#72e0a8; }
     *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--fg)}
-    header{display:flex;align-items:center;justify-content:space-between;padding:var(--pad);background:var(--card);position:sticky;top:0}
+    header{display:flex;align-items:center;justify-content:space-between;padding:var(--pad);background:var(--card);position:sticky;top:0;z-index:20}
     .brand{font-weight:700;letter-spacing:.3px}
     main{padding:calc(var(--pad)*1.5)}
     .muted{color:var(--muted)}
@@ -20,6 +20,14 @@
     .right{display:flex;gap:8px;align-items:center}
     .pill{background:#0f1117;border:1px solid #2a2e39;border-radius:999px;padding:6px 10px}
     a{color:var(--accent);text-decoration:none}
+    @media (max-width:640px){
+      header{flex-direction:column;align-items:flex-start;gap:10px;position:relative}
+      .right{flex-wrap:wrap}
+      main{padding:var(--pad)}
+      .row{flex-wrap:wrap}
+      input{min-width:0;width:100%}
+      button{width:100%}
+    }
   </style>
 </head>
 <body>

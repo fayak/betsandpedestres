@@ -7,14 +7,27 @@
     .bet-title-row {display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px;}
     .resolve-link {background:#451a1a; border:1px solid #fca5a5; color:#fee2e2; padding:10px 16px; border-radius:14px; font-weight:600; text-transform:uppercase; letter-spacing:0.02em; align-self:flex-start; box-shadow:0 0 12px rgba(252,165,165,0.2);}
     .resolve-link:hover {background:#7f1d1d; border-color:#fecaca;}
-    .bet-option-card {transition:background 0.2s ease, border-color 0.2s ease;}
-    .bet-option-card input.bet-radio {width:22px; height:22px; accent-color:#f97316; cursor:pointer;}
+    .bet-option-card {transition:background 0.2s ease, border-color 0.2s ease; display:flex; gap:16px; align-items:stretch;}
     .bet-option-card.disabled {opacity:0.6; cursor:not-allowed;}
+    .opt-main {flex:1; display:flex; flex-direction:column; gap:8px; min-width:0;}
+    .opt-radio-wrap {display:flex; align-items:center; justify-content:center; min-width:64px;}
+    .bet-radio {appearance:none;-webkit-appearance:none;width:30px;height:30px;border-radius:8px;border:2px solid #f97316;background:#0b1a2a;box-shadow:0 0 10px rgba(249,115,22,0.2);cursor:pointer;transition:transform 0.2s ease, background 0.2s ease;}
+    .bet-radio:checked {background:#f97316;}
+    .bet-radio:checked::after {content:"";width:14px;height:14px;border-radius:4px;background:#0b0c10;display:block;margin:auto;}
+    .bet-radio:disabled {opacity:0.4; cursor:not-allowed; box-shadow:none;}
     .wager-box {background:linear-gradient(180deg,#0f172a,#111827); border:1px solid #1f2937; border-radius:18px; padding:18px; margin-top:4px; box-shadow:0 10px 30px rgba(0,0,0,0.35);}
     .amount-input-wrap {display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start;}
     .amount-input-wrap input[type="number"] {padding:10px 12px; font-size:1.1rem; border-radius:12px; border:1px solid #475569; background:#0b1120; color:#f8fafc; min-width:140px;}
     .wager-slider {width:100%; margin:12px 0; accent-color:#38bdf8;}
     .wager-actions {display:flex; gap:10px; flex-wrap:wrap;}
+    @media (max-width:640px){
+      .bet-title-row {flex-direction:column; align-items:flex-start;}
+      .resolve-link {width:100%; text-align:center;}
+      .bet-option-card {flex-direction:column;}
+      .opt-radio-wrap {justify-content:flex-start; align-self:flex-start;}
+      .wager-actions {flex-direction:column; width:100%;}
+      .wager-actions .primary, .wager-actions .pill {width:100%; text-align:center;}
+    }
   </style>
 
   <div class="bet-title-row">
@@ -29,6 +42,10 @@
 
   {{if .Content.Description}}
     <p style="white-space:pre-wrap">{{.Content.Description}}</p>
+  {{end}}
+
+  {{if .Content.ExternalURL}}
+    <p class="muted" style="margin-top:-4px;">More context: <a href="{{.Content.ExternalURL}}" target="_blank" rel="noopener">{{.Content.ExternalURL}}</a></p>
   {{end}}
 
   {{if .Content.Deadline}}
@@ -78,25 +95,27 @@
   <form method="POST" action="/bets/{{.Content.BetID}}/resolve" style="display:grid; gap:16px; max-width:860px; margin-top:12px">
     <div class="opt-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
       {{range .Content.Options}}
-        <label class="opt-card bet-option-card" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#b91c1c{{end}}; border-radius:12px; padding:12px; display:block; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
-          <div class="row" style="justify-content:space-between; align-items:center;">
+        <label class="opt-card bet-option-card" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#b91c1c{{end}}; border-radius:12px; padding:12px; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
+          <div class="opt-main">
             <div style="font-weight:600">{{.Label}}</div>
+            <div class="row" style="gap:10px; flex-wrap:wrap;">
+              <span class="pill">🦶 Stakes: {{.Stakes}} PiedPièces</span>
+              <span class="pill">Ratio: {{.Ratio}}</span>
+            </div>
+            {{if .Bettors}}
+              <div>
+                <div class="muted" style="margin-bottom:4px">Bettors (by amount):</div>
+                <ul style="margin:0; padding-left:18px;">
+                  {{range .Bettors}}
+                    <li>{{if .Username}}<a href="/profile/{{.Username}}">{{.Name}}</a>{{else}}{{.Name}}{{end}} — {{.Amount}}</li>
+                  {{end}}
+                </ul>
+              </div>
+            {{end}}
+          </div>
+          <div class="opt-radio-wrap">
             <input type="radio" class="bet-radio" name="option_id" value="{{.ID}}" required>
           </div>
-          <div class="row" style="gap:10px; margin-top:6px; flex-wrap:wrap;">
-            <span class="pill">🦶 Stakes: {{.Stakes}} PiedPièces</span>
-            <span class="pill">Ratio: {{.Ratio}}</span>
-          </div>
-          {{if .Bettors}}
-            <div style="margin-top:8px;">
-              <div class="muted" style="margin-bottom:4px">Bettors (by amount):</div>
-              <ul style="margin:0; padding-left:18px;">
-                {{range .Bettors}}
-                  <li>{{if .Username}}<a href="/profile/{{.Username}}">{{.Name}}</a>{{else}}{{.Name}}{{end}} — {{.Amount}}</li>
-                {{end}}
-              </ul>
-            </div>
-          {{end}}
         </label>
       {{end}}
     </div>
@@ -120,36 +139,32 @@
   <form id="wagerForm" method="POST" action="/bets/{{.Content.BetID}}/wagers" style="display:grid; gap:16px; max-width:860px">
     <div class="opt-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
       {{range .Content.Options}}
-        <label class="opt-card bet-option-card{{if or (not $.Content.CanWager) $.Content.AlreadyClosed}} disabled{{end}}" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#2a2e39{{end}}; border-radius:12px; padding:12px; display:block; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
-          <div class="row" style="justify-content:space-between; align-items:center;">
+        <label class="opt-card bet-option-card{{if or (not $.Content.CanWager) $.Content.AlreadyClosed}} disabled{{end}}" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#2a2e39{{end}}; border-radius:12px; padding:12px; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
+          <div class="opt-main">
             <div style="font-weight:600">{{.Label}}</div>
-            {{if and $.Content.CanWager (not $.Content.AlreadyClosed)}}
-              <input type="radio" class="bet-radio" name="option_id" value="{{.ID}}" required>
+            <div class="row" style="gap:10px; flex-wrap:wrap;">
+              <span class="pill">🦶 Stakes: {{.Stakes}} PiedPièces</span>
+              <span class="pill">Ratio: {{.Ratio}}</span>
+            </div>
+            {{if .Bettors}}
+              <div>
+                <div class="muted" style="margin-bottom:4px">Bettors (by amount):</div>
+                <ul style="margin:0; padding-left:18px;">
+                  {{range .Bettors}}
+                    <li>{{if .Username}}<a href="/profile/{{.Username}}">{{.Name}}</a>{{else}}{{.Name}}{{end}} — {{.Amount}}</li>
+                  {{end}}
+                </ul>
+              </div>
+            {{else}}
+              <div class="muted">No wagers yet.</div>
             {{end}}
           </div>
-          <div class="row" style="gap:10px; margin-top:6px; flex-wrap:wrap;">
-            <span class="pill">🦶 Stakes: {{.Stakes}} PiedPièces</span>
-            <span class="pill">Ratio: {{.Ratio}}</span>
+          <div class="opt-radio-wrap">
+            <input type="radio" class="bet-radio" name="option_id" value="{{.ID}}" {{if and $.Content.CanWager (not $.Content.AlreadyClosed)}}required{{else}}disabled{{end}}>
           </div>
-          {{if .Bettors}}
-            <div style="margin-top:8px;">
-              <div class="muted" style="margin-bottom:4px">Bettors (by amount):</div>
-              <ul style="margin:0; padding-left:18px;">
-                {{range .Bettors}}
-                  <li>{{if .Username}}<a href="/profile/{{.Username}}">{{.Name}}</a>{{else}}{{.Name}}{{end}} — {{.Amount}}</li>
-                {{end}}
-              </ul>
-            </div>
-          {{else}}
-            <div class="muted" style="margin-top:8px;">No wagers yet.</div>
-          {{end}}
         </label>
       {{end}}
     </div>
-
-    {{if .Content.ExternalURL}}
-      <p><a href="{{.Content.ExternalURL}}" target="_blank" rel="noopener">External link ↗</a></p>
-    {{end}}
 
     {{if and $.Content.CanWager (not $.Content.AlreadyClosed)}}
       <div class="wager-box">
