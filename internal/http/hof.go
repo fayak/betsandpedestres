@@ -33,6 +33,10 @@ type hallOfFameContent struct {
 func (h *HallOfFameHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r)
 	header, _ := loadHeader(r.Context(), h.DB, uid)
+	if !header.LoggedIn {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
