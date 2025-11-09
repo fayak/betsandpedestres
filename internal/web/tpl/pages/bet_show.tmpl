@@ -13,7 +13,7 @@
     .bet-option-card.disabled {opacity:0.6; cursor:not-allowed;}
     .opt-main {flex:1; display:flex; flex-direction:column; gap:8px; min-width:0;}
     .opt-radio-wrap {display:flex; align-items:center; justify-content:center; min-width:30px;}
-    .bet-radio {appearance:none;-webkit-appearance:none;width:32px;height:32px;min-width: 32px;border-radius:0;border:2px solid #3f4b63;background:#0c1524;box-shadow:0 0 0 1px rgba(148,163,184,0.35);cursor:pointer;transition:box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;}
+    .bet-radio {appearance:none;-webkit-appearance:none;width:32px;height:32px;min-width: 32px;border-radius:0;border:1px solid #3f4b63;background:#0c1524;box-shadow:0 0 0 1px rgba(148,163,184,0.35);cursor:pointer;transition:box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;}
     .bet-radio:hover:not(:disabled) {border-color:#60a5fa;box-shadow:0 0 12px rgba(96,165,250,0.35);}    
     .bet-radio:checked {background:#1e293b;border-color:#60a5fa;box-shadow:0 0 12px rgba(96,165,250,0.55);}   
     .bet-radio:checked::after {content:"";display:block;width:14px;height:14px;margin-left: -2px;background:#e2e8f0;}
@@ -109,7 +109,7 @@
     {{end}}
     <div class="opt-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
       {{range .Content.Options}}
-        <label class="opt-card bet-option-card" style="border:0px solid {{if .SelectedByMe}}#4ade80{{else}}#b91c1c{{end}}; border-radius:12px; padding:12px; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
+        <label class="opt-card bet-option-card" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#b91c1c{{end}}; border-radius:12px; padding:12px; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
           <div class="opt-main">
             <div style="font-weight:600">{{.Label}}</div>
             <div class="row" style="gap:10px; flex-wrap:wrap;">
