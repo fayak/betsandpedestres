@@ -18,3 +18,10 @@ logging:
 
 security:
   jwt_secret: change-me
+
+moderation:
+  quorum: 2
+
+telegram:
+  bot_token: ""
+  group_chat_id: ""

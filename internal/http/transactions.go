@@ -69,21 +69,10 @@ type accountLite struct {
 
 func (h *TransactionsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r)
-
-	// Build shared header
-	header := web.HeaderData{}
-	if uid != "" {
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-		defer cancel()
-		_ = h.DB.QueryRow(ctx, `
-			select u.username, u.display_name, coalesce(b.balance,0)
-			from users u
-			left join user_balances b on b.user_id = u.id
-			where u.id = $1
-		`, uid).Scan(&header.Username, &header.DisplayName, &header.Balance)
-		if header.Username != "" {
-			header.LoggedIn = true
-		}
+	header, role := loadHeader(r.Context(), h.DB, uid)
+	if !header.LoggedIn || role == middleware.RoleUnverified {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
 	}
 
 	// pagination (defaults)

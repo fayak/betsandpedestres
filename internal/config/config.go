@@ -10,6 +10,11 @@ type Moderation struct {
 	Quorum int `yaml:"quorum"`
 }
 
+type TelegramConfig struct {
+	BotToken    string `yaml:"bot_token"`
+	GroupChatID string `yaml:"group_chat_id"`
+}
+
 type Config struct {
 	BaseURL string `yaml:"base_url"`
 
@@ -28,7 +33,8 @@ type Config struct {
 		JWTSecret string `yaml:"jwt_secret"`
 	} `yaml:"security"`
 
-	Moderation Moderation `yaml:"moderation"`
+	Moderation Moderation     `yaml:"moderation"`
+	Telegram   TelegramConfig `yaml:"telegram"`
 }
 
 type DatabaseConfig struct {

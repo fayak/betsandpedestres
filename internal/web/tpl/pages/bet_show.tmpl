@@ -4,7 +4,7 @@
 
 {{define "content"}}
   <h1>{{.Content.Title}}</h1>
-  <p class="muted">Created by {{.Content.CreatorName}}</p>
+  <p class="muted">Created by {{if .Content.CreatorUsername}}<a href="/profile/{{.Content.CreatorUsername}}">{{.Content.CreatorName}}</a>{{else}}{{.Content.CreatorName}}{{end}}</p>
 
   {{if .Content.Description}}
     <p style="white-space:pre-wrap">{{.Content.Description}}</p>
@@ -19,20 +19,25 @@
 <p class="muted">
   Status:
   {{if eq .Content.StatusLabel "Open"}}<span class="pill">Open</span>{{end}}
-  {{if eq .Content.StatusLabel "Past the deadline"}}<span class="pill" style="background:#433; border:1px solid #a55">Past the deadline</span>{{end}}
-  {{if eq .Content.StatusLabel "Resolution in progress"}}
-    <span class="pill" style="background:#243b53; border:1px solid #3b82f6">
-      Resolution in progress — votes: {{.Content.VotesTotal}} / {{.Content.Quorum}}
+  {{if eq .Content.StatusLabel "Past the deadline"}}<span class="pill" style="background:#806400; border:1px solid #facc15; color:#000;">Past the deadline</span>{{end}}
+  {{if eq .Content.StatusLabel "Waiting for consensus"}}
+    <span class="pill" style="background:#7c2d12; border:1px solid #fb923c">
+      Waiting for consensus — votes: {{.Content.VotesTotal}} / {{.Content.Quorum}}
     </span>
-    {{if .Content.MyVoteOptionID}}
-      <span class="pill" style="background:#1f2937; border:1px solid #4ade80">
-        Your vote is recorded
+  {{end}}
+  {{if eq .Content.StatusLabel "Closed"}}
+    <span class="pill" style="background:#5c1c1c; border:1px solid #e53e3e">
+      Closed
+    </span>
+    {{if .Content.WinningLabel}}
+      <span class="pill" style="background:#1f3d2b; border:1px solid #4ade80; margin-left:8px;">
+        Winner: {{.Content.WinningLabel}}
       </span>
     {{end}}
   {{end}}
-  {{if eq .Content.StatusLabel "Closed"}}
-    <span class="pill" style="background:#142; border:1px solid #4ade80">
-      Closed{{if .Content.WinningLabel}} — Winner: {{.Content.WinningLabel}}{{end}}
+  {{if .Content.MyVoteLabel}}
+    <span class="pill" style="background:#1f2937; border:1px solid #4ade80; margin-left:8px;">
+      Your vote: {{.Content.MyVoteLabel}}
     </span>
   {{end}}
 </p>
@@ -47,7 +52,7 @@
   <form method="POST" action="/bets/{{.Content.BetID}}/resolve" style="display:grid; gap:16px; max-width:860px; margin-top:12px">
     <div class="opt-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
       {{range .Content.Options}}
-        <label class="opt-card" style="border:1px solid #b91c1c; border-radius:12px; padding:12px; display:block; cursor:pointer; background:#13151a;">
+        <label class="opt-card" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#b91c1c{{end}}; border-radius:12px; padding:12px; display:block; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
           <div class="row" style="justify-content:space-between; align-items:center;">
             <div style="font-weight:600">{{.Label}}</div>
             <input type="radio" name="option_id" value="{{.ID}}" required>
@@ -61,7 +66,7 @@
               <div class="muted" style="margin-bottom:4px">Bettors (by amount):</div>
               <ul style="margin:0; padding-left:18px;">
                 {{range .Bettors}}
-                  <li>{{.Name}} — {{.Amount}}</li>
+                  <li>{{if .Username}}<a href="/profile/{{.Username}}">{{.Name}}</a>{{else}}{{.Name}}{{end}} — {{.Amount}}</li>
                 {{end}}
               </ul>
             </div>
@@ -81,10 +86,12 @@
   <form id="wagerForm" method="POST" action="/bets/{{.Content.BetID}}/wagers" style="display:grid; gap:16px; max-width:860px">
     <div class="opt-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
       {{range .Content.Options}}
-        <label class="opt-card" style="border:1px solid #2a2e39; border-radius:12px; padding:12px; display:block; cursor:pointer; background:#13151a;">
+        <label class="opt-card" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#2a2e39{{end}}; border-radius:12px; padding:12px; display:block; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
           <div class="row" style="justify-content:space-between; align-items:center;">
             <div style="font-weight:600">{{.Label}}</div>
-            <input type="radio" name="option_id" value="{{.ID}}" required>
+            {{if and $.Content.CanWager (not $.Content.AlreadyClosed)}}
+              <input type="radio" name="option_id" value="{{.ID}}" required>
+            {{end}}
           </div>
           <div class="row" style="gap:10px; margin-top:6px; flex-wrap:wrap;">
             <span class="pill">💰 Stakes: {{.Stakes}}</span>
@@ -95,7 +102,7 @@
               <div class="muted" style="margin-bottom:4px">Bettors (by amount):</div>
               <ul style="margin:0; padding-left:18px;">
                 {{range .Bettors}}
-                  <li>{{.Name}} — {{.Amount}}</li>
+                  <li>{{if .Username}}<a href="/profile/{{.Username}}">{{.Name}}</a>{{else}}{{.Name}}{{end}} — {{.Amount}}</li>
                 {{end}}
               </ul>
             </div>
@@ -110,7 +117,7 @@
       <p><a href="{{.Content.ExternalURL}}" target="_blank" rel="noopener">External link ↗</a></p>
     {{end}}
 
-    {{if .Content.CanWager}}
+    {{if and $.Content.CanWager (not $.Content.AlreadyClosed)}}
       <div style="display:grid; gap:10px; max-width:420px; margin-top:8px;">
         <label>
           <div>Amount (max: <span id="maxStake">{{.Content.MaxStake}}</span>)</div>
@@ -123,6 +130,12 @@
         </div>
         <p class="muted">Submitting will lock the amount into this bet’s escrow.</p>
       </div>
+    {{else if .Header.LoggedIn}}
+      {{if .Content.AlreadyClosed}}
+        <p class="muted">This bet is closed.</p>
+      {{else}}
+        <p class="muted">You can’t place a wager right now.</p>
+      {{end}}
     {{else}}
       <p class="muted">Please log in to place a wager.</p>
     {{end}}
@@ -137,7 +150,7 @@
   <h3>Payouts</h3>
   <ul>
     {{range .Content.Payouts}}
-      <li>{{.Name}} — +{{.Amount}}</li>
+      <li>{{if .Username}}<a href="/profile/{{.Username}}">{{.Name}}</a>{{else}}{{.Name}}{{end}} — +{{.Amount}}</li>
     {{end}}
   </ul>
 {{end}}
@@ -172,4 +185,3 @@
     })();
   </script>
 {{end}}
-

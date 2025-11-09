@@ -1,0 +1,173 @@
+{{define "user_profile"}}
+  {{template "base" .}}
+{{end}}
+
+{{define "content"}}
+  <h1>{{.Content.Title}}</h1>
+  {{if .Content.ViewingOther}}
+    <div class="pill" style="background:#1f2937; border:1px solid #3b82f6; margin-bottom:12px;">
+      You are viewing another user's profile.
+    </div>
+  {{end}}
+
+  {{if .Content.ShowUserPicker}}
+    <div style="margin-bottom:16px;">
+      <label>
+        <div class="muted" style="margin-bottom:4px;">Jump to another profile</div>
+        <select onchange="if(this.value) window.location = '/profile/' + this.value;">
+          <option value="">Select a user…</option>
+          {{range .Content.UserOptions}}
+            <option value="{{.Username}}" {{if eq $.Content.Target.Username .Username}}selected{{end}}>{{.DisplayName}} ({{.Username}})</option>
+          {{end}}
+        </select>
+      </label>
+    </div>
+  {{end}}
+
+  <section style="display:grid; gap:12px; margin-bottom:16px;">
+    <div style="border:1px solid #2a2e39; border-radius:12px; padding:12px;">
+      <h2 style="margin-top:0;">Account</h2>
+      <p><strong>Username:</strong> {{.Content.Target.Username}}</p>
+      <p><strong>Display name:</strong> {{.Content.Target.DisplayName}}</p>
+      <p><strong>Role:</strong> {{.Content.Target.Role}}</p>
+      <p><strong>Joined:</strong> <span class="dt" data-iso="{{.Content.Target.JoinedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span></p>
+      {{if eq .Content.RoleUpdateStatus "updated"}}
+        <div class="pill" style="background:#1f3d2b; border:1px solid #4ade80; margin:8px 0;">
+          Role updated.
+        </div>
+      {{end}}
+      {{if .Content.CanEditRoles}}
+        <form method="POST" action="/profile/{{.Content.Target.Username}}" class="row" style="gap:8px; align-items:flex-end; flex-wrap:wrap;">
+          <label>
+            <div>Set role</div>
+            <select name="role">
+              <option value="unverified" {{if eq .Content.Target.Role "unverified"}}selected{{end}}>Unverified</option>
+              <option value="user" {{if eq .Content.Target.Role "user"}}selected{{end}}>User</option>
+              <option value="moderator" {{if eq .Content.Target.Role "moderator"}}selected{{end}}>Moderator</option>
+              <option value="admin" {{if eq .Content.Target.Role "admin"}}selected{{end}}>Admin</option>
+            </select>
+          </label>
+          <button class="pill">Update</button>
+      </form>
+      {{end}}
+    </div>
+    <div style="border:1px solid #2a2e39; border-radius:12px; padding:12px;">
+      <h2 style="margin-top:0;">Wallet</h2>
+      <p style="font-size:1.2em; margin:0;">
+        {{.Content.Wallet.Balance}} coins
+        {{if .Content.Wallet.Escrow}}
+          <span class="muted">(+ {{.Content.Wallet.Escrow}} in escrow)</span>
+        {{end}}
+      </p>
+    </div>
+    <div style="border:1px solid #2a2e39; border-radius:12px; padding:12px;">
+      <h2 style="margin-top:0;">Telegram</h2>
+      <p><strong>Chat ID:</strong>
+        {{if .Content.Target.TelegramChatID}}
+          {{.Content.Target.TelegramChatID}}
+        {{else}}
+          <span class="muted">&lt;none&gt;</span>
+        {{end}}
+      </p>
+      <p><strong>Your user ID:</strong> <code>{{.Content.Target.ID}}</code></p>
+      <p class="muted" style="display:flex; flex-direction:column; gap:6px;">
+        Send this command to
+        <a href="https://t.me/betsandpedestres_bot" target="_blank" rel="noopener">@betsandpedestres_bot</a>:
+        <span style="display:inline-flex; align-items:center; gap:8px;">
+          <span class="pill" style="background:#4b2e22; border:1px solid #f97316; color:#fbd38d; font-family:monospace;">
+            /register {{.Content.Target.ID}}
+          </span>
+          <button type="button" class="pill" style="background:#f97316; border:0; color:#1f1f1f;" onclick="copyRegisterCommand('{{.Content.Target.ID}}')">
+            Copy
+          </button>
+        </span>
+        <span id="copyNotice" class="muted" style="display:none;">Copied to clipboard ✓</span>
+      </p>
+    </div>
+  </section>
+
+  <section style="margin-bottom:24px;">
+    <h2>Active bets (created)</h2>
+    {{if .Content.ActiveBets}}
+      <div style="display:grid; gap:10px;">
+        {{range .Content.ActiveBets}}
+          <div style="border:1px solid #2a2e39; border-radius:10px; padding:10px;">
+            <div class="row" style="justify-content:space-between; gap:12px;">
+              <strong><a href="/bets/{{.ID}}">{{.Title}}</a></strong>
+              <span class="muted">Created <span class="dt" data-iso="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span></span>
+            </div>
+            <div class="muted" style="margin-top:6px;">
+              Stakes: {{.Stakes}} · Deadline:
+              {{if .Deadline}}<span class="dt" data-iso="{{.Deadline.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span>{{else}}—{{end}}
+            </div>
+          </div>
+        {{end}}
+      </div>
+    {{else}}
+      <p class="muted">No active bets right now.</p>
+    {{end}}
+  </section>
+
+  <section style="margin-bottom:24px;">
+    <h2>Active wagers</h2>
+    {{if .Content.ActiveWagers}}
+      <div style="display:grid; gap:10px;">
+        {{range .Content.ActiveWagers}}
+          <div style="border:1px solid #2a2e39; border-radius:10px; padding:10px; display:flex; justify-content:space-between; gap:12px;">
+            <div>
+              <strong><a href="/bets/{{.BetID}}">{{.BetTitle}}</a></strong>
+              <div class="muted">Deadline: {{if .Deadline}}<span class="dt" data-iso="{{.Deadline.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span>{{else}}—{{end}}</div>
+            </div>
+            <div><strong>{{.Amount}}</strong> coins</div>
+          </div>
+        {{end}}
+      </div>
+    {{else}}
+      <p class="muted">No active wagers yet.</p>
+    {{end}}
+  </section>
+
+  <section>
+    <h2>Recent transactions</h2>
+    {{if .Content.Transactions}}
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr style="text-align:left;">
+              <th style="padding:6px;">Date</th>
+              <th style="padding:6px;">Details</th>
+              <th style="padding:6px; text-align:right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Content.Transactions}}
+              <tr style="border-top:1px solid #2a2e39;">
+                <td style="padding:6px;"><span class="dt" data-iso="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span></td>
+                <td style="padding:6px;">
+                  <div><strong>{{.Reason}}</strong>{{if .BetTitle}} · {{.BetTitle}}{{end}}</div>
+                  {{if .Note}}<div class="muted">{{.Note}}</div>{{end}}
+                </td>
+                <td style="padding:6px; text-align:right; font-weight:bold; color:{{if gt .Delta 0}}#4caf50{{else}}#e57373{{end}};">
+                  {{if gt .Delta 0}}+{{end}}{{.Delta}}
+                </td>
+              </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    {{else}}
+      <p class="muted">No transactions yet.</p>
+    {{end}}
+  </section>
+  <script>
+    function copyRegisterCommand(id){
+      const command = `/register ${id}`;
+      navigator.clipboard.writeText(command).then(()=>{
+        const notice = document.getElementById('copyNotice');
+        if(!notice) return;
+        notice.style.display = 'inline';
+        setTimeout(()=>notice.style.display = 'none', 2000);
+      });
+    }
+  </script>
+{{end}}

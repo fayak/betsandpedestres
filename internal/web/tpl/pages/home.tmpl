@@ -5,6 +5,49 @@
 {{define "content"}}
   <h1>{{.Content.Title}}</h1>
 
+  {{if .Content.ShowSignup}}
+    <section style="margin:20px 0; max-width:600px;">
+      <p>{{.Content.Description}}</p>
+      {{if eq .Content.SignupStatus "ok"}}
+        <div class="pill" style="background:#1f3d2b; border:1px solid #4ade80; margin-bottom:12px;">
+          Account request submitted! Please wait for an admin to approve it.
+        </div>
+      {{else if eq .Content.SignupStatus "exists"}}
+        <div class="pill" style="background:#3a1d1d; border:1px solid #a33; margin-bottom:12px;">
+          That username is already taken. Please pick another.
+        </div>
+      {{else if eq .Content.SignupStatus "missing"}}
+        <div class="pill" style="background:#3a1d1d; border:1px solid #a33; margin-bottom:12px;">
+          Please fill out every field.
+        </div>
+      {{else if eq .Content.SignupStatus "error"}}
+        <div class="pill" style="background:#3a1d1d; border:1px solid #a33; margin-bottom:12px;">
+          Something went wrong. Try again later.
+        </div>
+      {{end}}
+      <form method="POST" action="/register" style="display:grid; gap:12px;">
+        <label>
+          <div>Username</div>
+          <input name="username" required autocomplete="off" placeholder="your-handle">
+        </label>
+        <label>
+          <div>Display name</div>
+          <input name="display_name" required autocomplete="off" placeholder="How others see you">
+        </label>
+        <label>
+          <div>Password</div>
+          <input type="password" name="password" required placeholder="Choose a password">
+        </label>
+        <button class="primary">Request account</button>
+      </form>
+    </section>
+  {{else if .Content.ShowPending}}
+    <section style="margin:20px 0; max-width:600px;">
+      <div class="pill" style="background:#1f2937; border:1px solid #f59e0b;">
+        Your account is pending approval from an administrator. You will gain access once approved.
+      </div>
+    </section>
+  {{else}}
   <form method="GET" action="/" class="row" style="gap:12px; margin:12px 0; flex-wrap:wrap">
     <label>Sort
       <select name="sort" onchange="this.form.submit()">
@@ -31,6 +74,17 @@
       </select>
     </label>
 
+    <label>Status
+      <select name="exp" onchange="this.form.submit()">
+        <option value="unresolved" {{if eq .Content.ExpiryFilter "unresolved"}}selected{{end}}>Unresolved</option>
+        <option value="open"    {{if eq .Content.ExpiryFilter "open"}}selected{{end}}>Open bets</option>
+        <option value="expired" {{if eq .Content.ExpiryFilter "expired"}}selected{{end}}>Past the deadline</option>
+        <option value="waiting" {{if eq .Content.ExpiryFilter "waiting"}}selected{{end}}>Waiting for decision</option>
+        <option value="closed"  {{if eq .Content.ExpiryFilter "closed"}}selected{{end}}>Closed</option>
+        <option value="all"     {{if eq .Content.ExpiryFilter "all"}}selected{{end}}>All</option>
+      </select>
+    </label>
+
     <input type="hidden" name="page" value="{{.Content.Page}}">
     <input type="hidden" name="size" value="{{.Content.Size}}">
     <a class="pill" href="/">Reset</a>
@@ -41,20 +95,41 @@
 
   <div style="display:grid; gap:12px;">
     {{range .Content.Rows}}
-      <div style="border:1px solid #2a2e39; border-radius:12px; padding:12px; background:#13151a;">
-        <div class="row" style="justify-content:space-between; align-items:baseline">
-          <h3 style="margin:0"><a href="/bets/{{.ID}}">{{.Title}}</a></h3>
-          <span class="muted">by {{.CreatorName}}</span>
+      <div style="border:1px solid #2a2e39; border-radius:12px; padding:14px; background:#13151a; display:flex; flex-direction:column; gap:10px;">
+        <div class="row" style="justify-content:space-between; align-items:flex-start; gap:12px;">
+          <div>
+            <h3 style="margin:0"><a href="/bets/{{.ID}}">{{.Title}}</a></h3>
+          </div>
+          <span class="pill" style="background:{{.StatusColor}}; color:#fff; border:none; font-size:0.85em;">{{.StatusLabel}}</span>
         </div>
 
-        <div class="row" style="gap:12px; margin-top:6px; flex-wrap:wrap">
-          <span class="pill">Options:
-            {{range $i, $opt := .Options}}{{if $i}}, {{end}}{{$opt}}{{end}}
-          </span>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          {{range .Options}}
+            <div style="border:1px solid #2a2e39; border-radius:8px; padding:8px; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.7) {{.Percent}}%); display:flex; justify-content:space-between; align-items:center;">
+              <span>{{.Label}}</span>
+              <strong>{{.Percent}}%</strong>
+            </div>
+          {{end}}
+        </div>
+
+        <div class="row" style="gap:8px; flex-wrap:wrap">
           <span class="pill">💰 Stakes: {{.Stakes}}</span>
           <span class="pill">👥 Participants: {{.Participants}}</span>
-          <span class="pill">Created: <span class="dt" data-iso="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span></span>
-          <span class="pill">Deadline: {{if .Deadline}}<span class="dt" data-iso="{{.Deadline.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span>{{else}}—{{end}}</span>
+          <span class="pill">
+            Deadline:
+            {{if .Deadline}}
+              {{if eq .ExpiresIn "expired"}}
+                expired
+              {{else}}
+                <span class="dt" data-iso="{{.Deadline.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span>{{if .ExpiresIn}} · expires in {{.ExpiresIn}}{{end}}
+              {{end}}
+            {{else}}—{{end}}
+          </span>
+        </div>
+
+        <div class="row" style="justify-content:space-between; align-items:center; font-size:0.85em; color:#7d8499;">
+          <span>by {{if .CreatorUser}}<a href="/profile/{{.CreatorUser}}">{{.CreatorName}}</a>{{else}}{{.CreatorName}}{{end}}</span>
+          <span style="margin-left:auto;">Created <span class="dt" data-iso="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span></span>
         </div>
       </div>
     {{else}}
@@ -66,5 +141,5 @@
     {{if .Content.HasPrev}}<a href="{{.Content.PrevURL}}">← Prev</a>{{end}}
     {{if .Content.HasNext}}<a href="{{.Content.NextURL}}">Next →</a>{{end}}
   </nav>
+  {{end}}
 {{end}}
-

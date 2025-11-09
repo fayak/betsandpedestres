@@ -21,27 +21,31 @@ type BetWagerCreateHandler struct {
 }
 
 type bettorVM struct {
-	Name   string
-	Amount int64
+	Name     string
+	Username string
+	Amount   int64
 }
 
 type betOptionVM struct {
-	ID      string
-	Label   string
-	Stakes  int64
-	Bettors []bettorVM
-	Ratio   string
+	ID           string
+	Label        string
+	Stakes       int64
+	Bettors      []bettorVM
+	Ratio        string
+	Percent      int
+	SelectedByMe bool
 }
 
 type betShowContent struct {
-	BetID       string
-	Title       string
-	Description *string
-	ExternalURL *string
-	Deadline    *time.Time
-	Options     []betOptionVM
-	TotalStakes int64
-	CreatorName string
+	BetID           string
+	Title           string
+	Description     *string
+	ExternalURL     *string
+	Deadline        *time.Time
+	Options         []betOptionVM
+	TotalStakes     int64
+	CreatorName     string
+	CreatorUsername string
 
 	CanWager       bool
 	MaxStake       int64 // user's current balance (server-enforced too)
@@ -54,6 +58,7 @@ type betShowContent struct {
 	VotesTotal      int
 	Quorum          int
 	MyVoteOptionID  *string
+	MyVoteLabel     *string
 	WinningOptionID *string
 	WinningLabel    *string
 
@@ -61,8 +66,9 @@ type betShowContent struct {
 }
 
 type payoutVM struct {
-	Name   string
-	Amount int64
+	Name     string
+	Username string
+	Amount   int64
 }
 
 type BetShowHandler struct {

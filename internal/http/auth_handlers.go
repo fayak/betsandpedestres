@@ -90,7 +90,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
 	})
-	w.WriteHeader(http.StatusNoContent)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {

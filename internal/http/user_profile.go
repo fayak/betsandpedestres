@@ -1,0 +1,411 @@
+package http
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"net/http"
+	"time"
+
+	"betsandpedestres/internal/http/middleware"
+	"betsandpedestres/internal/notify"
+	"betsandpedestres/internal/web"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type UserProfileHandler struct {
+	DB       *pgxpool.Pool
+	TPL      *web.Renderer
+	Notifier notify.Notifier
+}
+
+type profileUserInfo struct {
+	ID             string
+	Username       string
+	DisplayName    string
+	Role           string
+	JoinedAt       time.Time
+	TelegramChatID *int64
+}
+
+type profileWallet struct {
+	Balance int64
+	Escrow  int64
+}
+
+type profileBet struct {
+	ID        string
+	Title     string
+	CreatedAt time.Time
+	Deadline  *time.Time
+	Stakes    int64
+}
+
+type profileWager struct {
+	BetID    string
+	BetTitle string
+	Amount   int64
+	Deadline *time.Time
+}
+
+type profileTransaction struct {
+	ID        string
+	CreatedAt time.Time
+	Reason    string
+	Note      *string
+	BetTitle  *string
+	Delta     int64
+}
+
+type profileUserOption struct {
+	Username    string
+	DisplayName string
+}
+
+type profileContent struct {
+	Title            string
+	Target           profileUserInfo
+	Wallet           profileWallet
+	ActiveBets       []profileBet
+	ActiveWagers     []profileWager
+	Transactions     []profileTransaction
+	ViewingOther     bool
+	ShowUserPicker   bool
+	UserOptions      []profileUserOption
+	CanEditRoles     bool
+	RoleUpdateStatus string
+}
+
+func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.UserID(r)
+	if uid == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	header, role := loadHeader(r.Context(), h.DB, uid)
+	if !header.LoggedIn {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	targetUsername := header.Username
+	pathUsername := r.PathValue("username")
+	if pathUsername != "" {
+		if role == middleware.RoleUnverified {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		targetUsername = pathUsername
+	}
+
+	if r.Method == http.MethodPost {
+		if role != middleware.RoleAdmin {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		target := r.PathValue("username")
+		if target == "" {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad form", http.StatusBadRequest)
+			return
+		}
+		newRole := r.Form.Get("role")
+		if !isValidRole(newRole) {
+			http.Error(w, "bad role", http.StatusBadRequest)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		targetDisplay, err := h.updateUserRole(ctx, uid, target, newRole)
+		if err != nil {
+			http.Error(w, "db error", http.StatusInternalServerError)
+			return
+		}
+		if targetDisplay != "" {
+			msg := fmt.Sprintf("Admin %s set role for %s to %s", header.DisplayName, targetDisplay, newRole)
+			h.Notifier.NotifyAdmins(ctx, msg)
+		}
+		http.Redirect(w, r, "/profile/"+target+"?role=updated", http.StatusSeeOther)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if targetUsername == "" {
+		if err := h.DB.QueryRow(ctx, `select username from users where id = $1::uuid`, uid).Scan(&targetUsername); err != nil {
+			http.Error(w, "could not load user", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	targetUser, err := h.fetchUserInfo(ctx, targetUsername)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			http.NotFound(w, r)
+		} else {
+			http.Error(w, "db error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	wallet := h.fetchWallet(ctx, targetUser.ID)
+	activeBets, err := h.fetchActiveBets(ctx, targetUser.ID)
+	if err != nil {
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	activeWagers, err := h.fetchActiveWagers(ctx, targetUser.ID)
+	if err != nil {
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	transactions, err := h.fetchTransactions(ctx, targetUser.ID)
+	if err != nil {
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+
+	var userOptions []profileUserOption
+	showPicker := role != middleware.RoleUnverified
+	if showPicker {
+		userOptions, _ = h.fetchUserOptions(ctx)
+	}
+
+	content := profileContent{
+		Title:            "Profile of " + targetUser.DisplayName,
+		Target:           targetUser,
+		Wallet:           wallet,
+		ActiveBets:       activeBets,
+		ActiveWagers:     activeWagers,
+		Transactions:     transactions,
+		ViewingOther:     targetUsername != header.Username,
+		ShowUserPicker:   showPicker,
+		UserOptions:      userOptions,
+		RoleUpdateStatus: r.URL.Query().Get("role"),
+		CanEditRoles:     role == middleware.RoleAdmin,
+	}
+
+	page := web.Page[profileContent]{Header: header, Content: content}
+
+	var buf bytes.Buffer
+	if err := h.TPL.Render(&buf, "user_profile", page); err != nil {
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(buf.Bytes())
+}
+
+func (h *UserProfileHandler) fetchUserInfo(ctx context.Context, username string) (profileUserInfo, error) {
+	var info profileUserInfo
+	err := h.DB.QueryRow(ctx, `
+		select id::text, username, display_name, role, created_at, telegram_chat_id
+		from users
+		where username = $1
+	`, username).Scan(&info.ID, &info.Username, &info.DisplayName, &info.Role, &info.JoinedAt, &info.TelegramChatID)
+	return info, err
+}
+
+func (h *UserProfileHandler) fetchWallet(ctx context.Context, userID string) profileWallet {
+	var wallet profileWallet
+	_ = h.DB.QueryRow(ctx, `
+		select coalesce(balance,0)::bigint
+		from user_balances
+		where user_id = $1::uuid
+	`, userID).Scan(&wallet.Balance)
+
+	_ = h.DB.QueryRow(ctx, `
+		select coalesce(sum(w.amount),0)::bigint
+		from wagers w
+		join bets b on b.id = w.bet_id
+		where w.user_id = $1::uuid and b.status = 'open'
+	`, userID).Scan(&wallet.Escrow)
+
+	return wallet
+}
+
+func (h *UserProfileHandler) fetchActiveBets(ctx context.Context, userID string) ([]profileBet, error) {
+	rows, err := h.DB.Query(ctx, `
+		select
+			b.id::text,
+			b.title,
+			b.created_at,
+			b.deadline,
+			coalesce(sum(w.amount),0)::bigint as stakes
+		from bets b
+		left join wagers w on w.bet_id = b.id
+		where b.creator_user_id = $1::uuid and b.status = 'open'
+		group by b.id
+		order by b.created_at desc
+		limit 20
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []profileBet
+	for rows.Next() {
+		var b profileBet
+		if err := rows.Scan(&b.ID, &b.Title, &b.CreatedAt, &b.Deadline, &b.Stakes); err != nil {
+			return nil, err
+		}
+		list = append(list, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func (h *UserProfileHandler) fetchActiveWagers(ctx context.Context, userID string) ([]profileWager, error) {
+	rows, err := h.DB.Query(ctx, `
+		select
+			b.id::text,
+			b.title,
+			coalesce(sum(w.amount),0)::bigint as amt,
+			b.deadline
+		from wagers w
+		join bets b on b.id = w.bet_id
+		where w.user_id = $1::uuid and b.status = 'open'
+		group by b.id
+		order by b.deadline asc nulls last, b.title asc
+		limit 20
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []profileWager
+	for rows.Next() {
+		var wrow profileWager
+		if err := rows.Scan(&wrow.BetID, &wrow.BetTitle, &wrow.Amount, &wrow.Deadline); err != nil {
+			return nil, err
+		}
+		list = append(list, wrow)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func (h *UserProfileHandler) fetchTransactions(ctx context.Context, userID string) ([]profileTransaction, error) {
+	rows, err := h.DB.Query(ctx, `
+		select
+			t.id::text,
+			t.created_at,
+			t.reason,
+			b.title,
+			t.note,
+			le.delta
+		from ledger_entries le
+		join accounts a on a.id = le.account_id
+		join transactions t on t.id = le.tx_id
+		left join bets b on b.id = t.bet_id
+		where a.user_id = $1::uuid
+		order by t.created_at desc, t.id desc
+		limit 20
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []profileTransaction
+	for rows.Next() {
+		var trow profileTransaction
+		if err := rows.Scan(&trow.ID, &trow.CreatedAt, &trow.Reason, &trow.BetTitle, &trow.Note, &trow.Delta); err != nil {
+			return nil, err
+		}
+		list = append(list, trow)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+func (h *UserProfileHandler) fetchUserOptions(ctx context.Context) ([]profileUserOption, error) {
+	rows, err := h.DB.Query(ctx, `
+		select username, display_name
+		from users
+		order by display_name asc
+		limit 200
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var opts []profileUserOption
+	for rows.Next() {
+		var opt profileUserOption
+		if err := rows.Scan(&opt.Username, &opt.DisplayName); err != nil {
+			return nil, err
+		}
+		opts = append(opts, opt)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return opts, nil
+}
+
+func (h *UserProfileHandler) updateUserRole(ctx context.Context, adminID, targetUsername, newRole string) (string, error) {
+	tx, err := h.DB.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+
+	var targetID, oldRole, displayName string
+	if err := tx.QueryRow(ctx, `
+		select id::text, role, display_name
+		from users
+		where username = $1
+		for update
+	`, targetUsername).Scan(&targetID, &oldRole, &displayName); err != nil {
+		return "", err
+	}
+
+	if oldRole != newRole {
+		if _, err := tx.Exec(ctx, `
+			update users
+			set role = $1
+			where id = $2::uuid
+		`, newRole, targetID); err != nil {
+			return "", err
+		}
+		if _, err := tx.Exec(ctx, `
+			insert into admin_actions (admin_user_id, target_user_id, action, old_role, new_role)
+			values ($1::uuid, $2::uuid, $3, $4, $5)
+		`, adminID, targetID, "role_change", oldRole, newRole); err != nil {
+			return "", err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+	return displayName, nil
+}
+
+func isValidRole(role string) bool {
+	switch role {
+	case middleware.RoleUnverified, middleware.RoleUser, middleware.RoleModerator, middleware.RoleAdmin:
+		return true
+	default:
+		return false
+	}
+}

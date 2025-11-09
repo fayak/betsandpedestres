@@ -3,7 +3,9 @@ package http
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,16 +21,27 @@ type HomeHandler struct {
 	TPL *web.Renderer
 }
 
+type betOptionSummary struct {
+	Label   string
+	Percent int
+}
+
 type betCard struct {
-	ID           string
-	Title        string
-	CreatorName  string
-	CreatorUser  string
-	CreatedAt    time.Time
-	Deadline     *time.Time
-	Stakes       int64
-	Participants int64
-	Options      []string
+	ID            string
+	Title         string
+	CreatorName   string
+	CreatorUser   string
+	CreatedAt     time.Time
+	Deadline      *time.Time
+	Stakes        int64
+	Participants  int64
+	Options       []betOptionSummary
+	Status        string
+	StatusLabel   string
+	StatusColor   string
+	ExpiresIn     string
+	WinningOption *string
+	VoteCount     int
 }
 
 type creatorOpt struct {
@@ -37,39 +50,31 @@ type creatorOpt struct {
 }
 
 type homeContent struct {
-	Title       string
-	Rows        []betCard
-	Page        int
-	Size        int
-	HasPrev     bool
-	HasNext     bool
-	PrevURL     string
-	NextURL     string
-	Sort        string
-	UserFilter  string // creator username ("" = all)
-	PartFilter  string // "all"|"me"|"notme"
-	SortChoices []struct{ Key, Label string }
-	Creators    []creatorOpt
+	Title        string
+	Rows         []betCard
+	Page         int
+	Size         int
+	HasPrev      bool
+	HasNext      bool
+	PrevURL      string
+	NextURL      string
+	Sort         string
+	UserFilter   string // creator username ("" = all)
+	PartFilter   string // "all"|"me"|"notme"
+	ExpiryFilter string
+	SortChoices  []struct{ Key, Label string }
+	Creators     []creatorOpt
+
+	ShowSignup   bool
+	ShowPending  bool
+	SignupStatus string
+	Role         string
+	Description  string
 }
 
 func (h *HomeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r)
-
-	// Header (unchanged)
-	header := web.HeaderData{}
-	if uid != "" {
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-		defer cancel()
-		_ = h.DB.QueryRow(ctx, `
-			select u.username, u.display_name, coalesce(b.balance,0)
-			from users u
-			left join user_balances b on b.user_id = u.id
-			where u.id = $1
-		`, uid).Scan(&header.Username, &header.DisplayName, &header.Balance)
-		if header.Username != "" {
-			header.LoggedIn = true
-		}
-	}
+	header, role := loadHeader(r.Context(), h.DB, uid)
 
 	// Controls
 	q := r.URL.Query()
@@ -92,6 +97,51 @@ func (h *HomeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	partFilter := strings.TrimSpace(q.Get("p"))    // "all","me","notme"
 	if partFilter == "" {
 		partFilter = "all"
+	}
+	expiryFilter := strings.TrimSpace(q.Get("exp"))
+	switch expiryFilter {
+	case "", "unresolved":
+		expiryFilter = "unresolved"
+	case "all", "expired", "open", "waiting", "closed":
+	default:
+		expiryFilter = "unresolved"
+	}
+
+	if !header.LoggedIn {
+		content := homeContent{
+			Title:        "Welcome to Bets & Pedestres",
+			ShowSignup:   true,
+			SignupStatus: q.Get("signup"),
+			Description:  "Bets & Pedestres lets you create friendly prediction markets with transparent escrows and community-driven resolutions.",
+		}
+		page := web.Page[homeContent]{Header: header, Content: content}
+		var buf bytes.Buffer
+		if err := h.TPL.Render(&buf, "home", page); err != nil {
+			slog.Error("could not render", "error", err)
+			http.Error(w, "template error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(buf.Bytes())
+		return
+	}
+
+	if role == middleware.RoleUnverified {
+		content := homeContent{
+			Title:       "Account pending approval",
+			ShowPending: true,
+			Role:        role,
+		}
+		page := web.Page[homeContent]{Header: header, Content: content}
+		var buf bytes.Buffer
+		if err := h.TPL.Render(&buf, "home", page); err != nil {
+			slog.Error("could not render", "error", err)
+			http.Error(w, "template error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(buf.Bytes())
+		return
 	}
 
 	orderBy := `order by b.created_at desc, b.id desc`
@@ -141,24 +191,48 @@ func (h *HomeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return "$" + strconv.Itoa(len(args))
 	}
 
-	// CTE WHERE: only tables present in CTE (bets b, wagers w)
-	whereAgg := `where b.status = 'open'`
+	baseFilters := []string{}
+	nowExpr := "now() at time zone 'utc'"
+	switch expiryFilter {
+	case "unresolved":
+		baseFilters = append(baseFilters, `(b.status = 'open')`)
+	case "open":
+		baseFilters = append(baseFilters, `(b.status = 'open' and (b.deadline is null or b.deadline > `+nowExpr+`))`)
+	case "expired":
+		baseFilters = append(baseFilters, `(b.status = 'open' and b.deadline is not null and b.deadline <= `+nowExpr+`)`)
+	case "waiting":
+		baseFilters = append(baseFilters, `(b.status = 'open' and exists (select 1 from bet_resolution_votes v where v.bet_id = b.id))`)
+	case "closed":
+		baseFilters = append(baseFilters, `(b.status <> 'open')`)
+	case "all":
+		// no filter
+	default:
+		baseFilters = append(baseFilters, `(b.status = 'open')`)
+	}
 
-	// Outer WHERE (can reference users u, and participation EXISTS)
-	whereOuter := `where b.status = 'open'`
+	whereAgg := "where true"
+	if len(baseFilters) > 0 {
+		whereAgg = `where ` + strings.Join(baseFilters, " and ")
+	}
+
+	whereOuterParts := append([]string{}, baseFilters...)
 	if userFilter != "" {
-		whereOuter += ` and u.username = ` + arg(userFilter)
+		whereOuterParts = append(whereOuterParts, `u.username = `+arg(userFilter))
 	}
 	if uid != "" && partFilter != "all" {
 		if partFilter == "me" {
-			whereOuter += ` and exists (
-			select 1 from wagers w where w.bet_id = b.id and w.user_id = ` + arg(uid) + `
-		)`
+			whereOuterParts = append(whereOuterParts, `exists (
+			select 1 from wagers w where w.bet_id = b.id and w.user_id = `+arg(uid)+`
+		)`)
 		} else if partFilter == "notme" {
-			whereOuter += ` and not exists (
-			select 1 from wagers w where w.bet_id = b.id and w.user_id = ` + arg(uid) + `
-		)`
+			whereOuterParts = append(whereOuterParts, `not exists (
+			select 1 from wagers w where w.bet_id = b.id and w.user_id = `+arg(uid)+`
+		)`)
 		}
+	}
+	whereOuter := "where true"
+	if len(whereOuterParts) > 0 {
+		whereOuter = `where ` + strings.Join(whereOuterParts, " and ")
 	}
 
 	limit := size + 1
@@ -187,7 +261,19 @@ select
   b.deadline,
   coalesce(a.sum_w, 0)        as stakes,
   coalesce(a.participants, 0) as participants,
-  (select array_agg(label order by position asc) from bet_options bo where bo.bet_id = b.id) as opts
+  (select array_agg(bo.label order by bo.position asc) from bet_options bo where bo.bet_id = b.id) as opt_labels,
+  (select array_agg(coalesce(ws.sum_amount,0)::bigint order by bo.position asc)
+     from bet_options bo
+     left join lateral (
+        select coalesce(sum(w.amount),0)::bigint as sum_amount
+        from wagers w
+        where w.option_id = bo.id
+     ) ws on true
+     where bo.bet_id = b.id
+  ) as opt_stakes,
+  b.status,
+  (select count(*)::int from bet_resolution_votes v where v.bet_id = b.id) as vote_count,
+  b.resolution_option_id::text as winning_option
 from bets b
 join users u on u.id = b.creator_user_id
 left join agg a on a.id = b.id
@@ -207,12 +293,14 @@ limit ` + limitPH + `::int offset ` + offsetPH + `::int
 	var list []betCard
 	for rows.Next() {
 		var bc betCard
-		var opts []string
-		if err := rows.Scan(&bc.ID, &bc.Title, &bc.CreatorName, &bc.CreatorUser, &bc.CreatedAt, &bc.Deadline, &bc.Stakes, &bc.Participants, &opts); err != nil {
+		var optLabels []string
+		var optStakes []int64
+		if err := rows.Scan(&bc.ID, &bc.Title, &bc.CreatorName, &bc.CreatorUser, &bc.CreatedAt, &bc.Deadline, &bc.Stakes, &bc.Participants, &optLabels, &optStakes, &bc.Status, &bc.VoteCount, &bc.WinningOption); err != nil {
 			http.Error(w, "scan error", http.StatusInternalServerError)
 			return
 		}
-		bc.Options = opts
+		bc.Options = buildOptionSummaries(optLabels, optStakes, bc.Stakes)
+		decorateBetCard(&bc)
 		list = append(list, bc)
 	}
 	if err := rows.Err(); err != nil {
@@ -237,19 +325,21 @@ limit ` + limitPH + `::int offset ` + offsetPH + `::int
 	}
 
 	content := homeContent{
-		Title:       "Active bets",
-		Rows:        list,
-		Page:        page,
-		Size:        size,
-		HasPrev:     page > 1,
-		HasNext:     hasNext,
-		PrevURL:     buildURL("/?page="+itoa(page-1)+"&size="+itoa(size)+"&sort="+sort, userFilter, partFilter),
-		NextURL:     buildURL("/?page="+itoa(page+1)+"&size="+itoa(size)+"&sort="+sort, userFilter, partFilter),
-		Sort:        sort,
-		UserFilter:  userFilter,
-		PartFilter:  partFilter,
-		SortChoices: choices,
-		Creators:    creators,
+		Title:        "Active bets",
+		Rows:         list,
+		Page:         page,
+		Size:         size,
+		HasPrev:      page > 1,
+		HasNext:      hasNext,
+		PrevURL:      buildURL("/?page="+itoa(page-1)+"&size="+itoa(size)+"&sort="+sort, userFilter, partFilter, expiryFilter),
+		NextURL:      buildURL("/?page="+itoa(page+1)+"&size="+itoa(size)+"&sort="+sort, userFilter, partFilter, expiryFilter),
+		Sort:         sort,
+		UserFilter:   userFilter,
+		PartFilter:   partFilter,
+		ExpiryFilter: expiryFilter,
+		SortChoices:  choices,
+		Creators:     creators,
+		Role:         role,
 	}
 
 	pageVM := web.Page[homeContent]{Header: header, Content: content}
@@ -264,7 +354,7 @@ limit ` + limitPH + `::int offset ` + offsetPH + `::int
 	_, _ = w.Write(buf.Bytes())
 }
 
-func buildURL(base, user, p string) string {
+func buildURL(base, user, p, exp string) string {
 	var sb strings.Builder
 	sb.WriteString(base)
 	if strings.Contains(base, "?") {
@@ -280,6 +370,11 @@ func buildURL(base, user, p string) string {
 	if p != "" {
 		sb.WriteString("p=")
 		sb.WriteString(p)
+		sb.WriteString("&")
+	}
+	if exp != "" && exp != "unresolved" {
+		sb.WriteString("exp=")
+		sb.WriteString(exp)
 		sb.WriteString("&")
 	}
 	s := sb.String()
@@ -299,4 +394,89 @@ func atoiDefault(s string, def int) int {
 		return def
 	}
 	return n
+}
+
+func buildOptionSummaries(labels []string, stakes []int64, total int64) []betOptionSummary {
+	n := len(labels)
+	if len(stakes) < n {
+		n = len(stakes)
+	}
+	if n == 0 {
+		return nil
+	}
+
+	var base int64
+	if total > 0 {
+		base = total
+	} else {
+		for i := 0; i < n; i++ {
+			base += stakes[i]
+		}
+	}
+	opts := make([]betOptionSummary, 0, n)
+	for i := 0; i < n; i++ {
+		percent := 0
+		if base > 0 {
+			percent = int(math.Round(float64(stakes[i]) * 100 / float64(base)))
+			if percent > 100 {
+				percent = 100
+			}
+		}
+		opts = append(opts, betOptionSummary{Label: labels[i], Percent: percent})
+	}
+	return opts
+}
+
+func decorateBetCard(bc *betCard) {
+	bc.StatusLabel, bc.StatusColor = statusBadge(bc.Deadline, bc.WinningOption, bc.Status, bc.VoteCount)
+	bc.ExpiresIn = formatExpiresIn(bc.Deadline)
+}
+
+func statusBadge(deadline *time.Time, winning *string, status string, votes int) (string, string) {
+	now := time.Now().UTC()
+	pastDeadline := (deadline != nil && deadline.Before(now) && winning == nil && status == "open")
+	waitingConsensus := (votes > 0 && winning == nil && status == "open")
+	alreadyClosed := (status != "open") || (winning != nil)
+
+	switch {
+	case alreadyClosed:
+		return "Closed", "#5c1c1c"
+	case waitingConsensus:
+		return "Waiting for consensus", "#f97316"
+	case pastDeadline:
+		return "Past the deadline", "#facc15"
+	default:
+		return "Open", "#1f6f43"
+	}
+}
+
+func formatExpiresIn(deadline *time.Time) string {
+	if deadline == nil {
+		return ""
+	}
+	now := time.Now().UTC()
+	diff := deadline.Sub(now)
+	if diff <= 0 {
+		return "expired"
+	}
+	minutes := int(diff.Minutes())
+	hours := int(diff.Hours())
+	days := hours / 24
+	switch {
+	case days > 2:
+		return fmt.Sprintf("%dd", days)
+	case days >= 1:
+		hoursRem := hours % 24
+		if hoursRem == 0 {
+			return fmt.Sprintf("%dd", days)
+		}
+		return fmt.Sprintf("%dd %dh", days, hoursRem)
+	case hours >= 1:
+		return fmt.Sprintf("%dh", hours)
+	default:
+		if minutes == 0 {
+			minutes = 1
+		}
+		return fmt.Sprintf("%dm", minutes)
+	}
 }

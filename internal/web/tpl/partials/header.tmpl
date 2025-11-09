@@ -2,9 +2,9 @@
 <header>
   <div class="brand"><a href="/">Bets And Pedestres <span class="muted">/ alpha</span></a></div>
   <div class="right">
-    <a class="pill" href="/transactions">Ledger</a>
     {{if .Header.LoggedIn}}
-      <span class="pill">{{.Header.DisplayName}}</span>
+      <a class="pill" href="/transactions">Ledger</a>
+      <a class="pill" href="/profile">{{.Header.DisplayName}}</a>
       <span class="pill">💰 {{formatCoins .Header.Balance}}</span>
       <button onclick="doLogout()">Logout</button>
     {{else}}

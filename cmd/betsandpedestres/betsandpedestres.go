@@ -18,6 +18,7 @@ import (
 	"betsandpedestres/internal/dbinit"
 	apphttp "betsandpedestres/internal/http"
 	"betsandpedestres/internal/logging"
+	"betsandpedestres/internal/telegram"
 )
 
 func main() {
@@ -74,6 +75,12 @@ func main() {
 	}
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 	defer rootCancel()
+
+	if cfg.Telegram.BotToken != "" {
+		if poller := telegram.NewPoller(pool, cfg.Telegram.BotToken); poller != nil {
+			go poller.Run(rootCtx)
+		}
+	}
 	srv := &http.Server{
 		Addr:         cfg.HTTP.Address,
 		Handler:      apphttp.WithStandardMiddleware(mux),

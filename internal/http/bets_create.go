@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"betsandpedestres/internal/http/middleware"
+	"betsandpedestres/internal/notify"
 	"betsandpedestres/internal/web"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,7 +20,11 @@ import (
 func (h *BetNewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r)
 
-	header := h.buildHeader(r.Context(), uid)
+	header, role := loadHeader(r.Context(), h.DB, uid)
+	if !header.LoggedIn || role == middleware.RoleUnverified {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	page := web.Page[betNewContent]{
 		Header:  header,
@@ -35,7 +41,9 @@ func (h *BetNewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type BetCreateHandler struct {
-	DB *pgxpool.Pool
+	DB       *pgxpool.Pool
+	Notifier notify.Notifier
+	BaseURL  string
 }
 
 var (
@@ -58,6 +66,17 @@ func (h *BetCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	role, err := middleware.GetUserRole(ctx, h.DB, uid)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if role == middleware.RoleUnverified {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
@@ -76,37 +95,23 @@ func (h *BetCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
+	ctxCreate, cancelCreate := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancelCreate()
 
-	betID, err := h.createBet(ctx, uid, form)
+	betID, err := h.createBet(ctxCreate, uid, form)
 	if err != nil {
 		slog.Error("create bet error", "error", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
 
+	if h.Notifier != nil {
+		message := fmt.Sprintf("New bet created: %s\n%s", form.Title, betLink(h.BaseURL, betID))
+		h.Notifier.NotifyGroup(r.Context(), message)
+	}
+
 	// Redirect to bet page
 	http.Redirect(w, r, "/bets/"+betID, http.StatusSeeOther)
-}
-
-func (h *BetNewHandler) buildHeader(ctx context.Context, uid string) web.HeaderData {
-	header := web.HeaderData{}
-	if uid == "" {
-		return header
-	}
-	headerCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	_ = h.DB.QueryRow(headerCtx, `
-			select u.username, u.display_name, coalesce(b.balance,0)
-			from users u
-			left join user_balances b on b.user_id = u.id
-			where u.id = $1
-		`, uid).Scan(&header.Username, &header.DisplayName, &header.Balance)
-	if header.Username != "" {
-		header.LoggedIn = true
-	}
-	return header
 }
 
 func parseBetForm(r *http.Request) (betForm, error) {

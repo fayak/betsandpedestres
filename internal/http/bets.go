@@ -22,19 +22,24 @@ func nullIfEmpty(s string) any {
 }
 
 type betRecord struct {
-	Title         string
-	CreatorName   string
-	Description   *string
-	ExternalURL   *string
-	Deadline      *time.Time
-	WinningOption *string
-	Status        string
+	Title           string
+	CreatorName     string
+	CreatorUsername string
+	Description     *string
+	ExternalURL     *string
+	Deadline        *time.Time
+	WinningOption   *string
+	Status          string
 }
 
 func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r)
 
-	header := h.buildHeader(r.Context(), uid)
+	header, role := loadHeader(r.Context(), h.DB, uid)
+	if !header.LoggedIn || role == middleware.RoleUnverified {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	betID := r.PathValue("id")
 	if betID == "" {
@@ -47,7 +52,7 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	modeResolve := r.URL.Query().Get("mode") == "resolve"
 
-	isMod := h.isModerator(ctx, header.LoggedIn, uid)
+	isMod := role == middleware.RoleModerator || role == middleware.RoleAdmin
 
 	bet, err := h.fetchBet(ctx, betID)
 	if err != nil {
@@ -66,6 +71,17 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	myVote, votesTotal := h.voteInfo(ctx, betID, uid, isMod)
+	var myVoteLabel *string
+	if myVote != nil {
+		for i := range opts {
+			if opts[i].ID == *myVote {
+				label := opts[i].Label
+				myVoteLabel = &label
+				opts[i].SelectedByMe = true
+				break
+			}
+		}
+	}
 
 	// ----- Determine status label -----
 	statusLabel, alreadyClosed, pastDeadline := determineStatus(bet.Deadline, bet.WinningOption, bet.Status, votesTotal)
@@ -88,17 +104,18 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	payouts = h.computePayouts(ctx, betID, bet.WinningOption, alreadyClosed)
 
 	content := betShowContent{
-		BetID:          betID,
-		Title:          bet.Title,
-		Description:    bet.Description,
-		ExternalURL:    bet.ExternalURL,
-		Deadline:       bet.Deadline,
-		Options:        opts,
-		TotalStakes:    total,
-		CreatorName:    bet.CreatorName,
-		CanWager:       canWager,
-		MaxStake:       maxStake,
-		IdempotencyKey: randomHex(16),
+		BetID:           betID,
+		Title:           bet.Title,
+		Description:     bet.Description,
+		ExternalURL:     bet.ExternalURL,
+		Deadline:        bet.Deadline,
+		Options:         opts,
+		TotalStakes:     total,
+		CreatorName:     bet.CreatorName,
+		CreatorUsername: bet.CreatorUsername,
+		CanWager:        canWager,
+		MaxStake:        maxStake,
+		IdempotencyKey:  randomHex(16),
 
 		IsModerator:     isMod,
 		ResolutionMode:  modeResolve && isMod && !alreadyClosed,
@@ -107,6 +124,7 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		VotesTotal:      votesTotal,
 		Quorum:          h.Quorum,
 		MyVoteOptionID:  myVote,
+		MyVoteLabel:     myVoteLabel,
 		WinningOptionID: bet.WinningOption,
 		WinningLabel:    winningLabel,
 		Payouts:         payouts,
@@ -116,6 +134,7 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var buf bytes.Buffer
 	if err := h.TPL.Render(&buf, "bet_show", page); err != nil {
+		slog.Error("template error", "error", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 		return
 	}
@@ -159,45 +178,14 @@ func computeRatio(a, b int64) string {
 	return strconv.FormatInt(a/g, 10) + ":" + strconv.FormatInt(b/g, 10)
 }
 
-func (h *BetShowHandler) buildHeader(ctx context.Context, uid string) web.HeaderData {
-	header := web.HeaderData{}
-	if uid == "" {
-		return header
-	}
-	headerCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	err := h.DB.QueryRow(headerCtx, `
-			select u.username, u.display_name, coalesce(b.balance,0)
-			from users u
-			left join user_balances b on b.user_id = u.id
-			where u.id = $1
-		`, uid).Scan(&header.Username, &header.DisplayName, &header.Balance)
-	if err == nil && header.Username != "" {
-		header.LoggedIn = true
-	}
-	return header
-}
-
-func (h *BetShowHandler) isModerator(ctx context.Context, loggedIn bool, uid string) bool {
-	if !loggedIn {
-		return false
-	}
-	ok, err := middleware.IsModerator(ctx, h.DB, uid)
-	if err != nil {
-		slog.Warn("could not determine if is_mod", "error", err)
-		return false
-	}
-	return ok
-}
-
 func (h *BetShowHandler) fetchBet(ctx context.Context, betID string) (betRecord, error) {
 	var rec betRecord
 	err := h.DB.QueryRow(ctx, `
-  select b.title, u.display_name, b.description, b.external_url, b.deadline, b.resolution_option_id::text, b.status
+  select b.title, u.display_name, u.username, b.description, b.external_url, b.deadline, b.resolution_option_id::text, b.status
   from bets b
   join users u on u.id = b.creator_user_id
   where b.id = $1::uuid
-`, betID).Scan(&rec.Title, &rec.CreatorName, &rec.Description, &rec.ExternalURL, &rec.Deadline, &rec.WinningOption, &rec.Status)
+`, betID).Scan(&rec.Title, &rec.CreatorName, &rec.CreatorUsername, &rec.Description, &rec.ExternalURL, &rec.Deadline, &rec.WinningOption, &rec.Status)
 	return rec, err
 }
 
@@ -209,15 +197,17 @@ func (h *BetShowHandler) fetchOptions(ctx context.Context, betID string) ([]betO
     coalesce( (select sum(w3.amount)::bigint from wagers w3 where w3.option_id = bo.id), 0 ) as stakes,
     coalesce( array_agg(wl.display_name order by wl.amt desc)
               filter (where wl.display_name is not null), '{}' ) as bettor_names,
+    coalesce( array_agg(wl.username order by wl.amt desc)
+              filter (where wl.username is not null), '{}' ) as bettor_usernames,
     coalesce( array_agg(wl.amt        order by wl.amt desc)
               filter (where wl.display_name is not null), '{}' ) as bettor_amts
   from bet_options bo
   left join lateral (
-    select u.display_name, sum(w2.amount)::bigint as amt
+    select u.display_name, u.username, sum(w2.amount)::bigint as amt
     from wagers w2
     join users u on u.id = w2.user_id
     where w2.option_id = bo.id
-    group by u.display_name
+    group by u.display_name, u.username
     order by amt desc
   ) wl on true
   where bo.bet_id = $1::uuid
@@ -235,20 +225,24 @@ func (h *BetShowHandler) fetchOptions(ctx context.Context, betID string) ([]betO
 	)
 	for rows.Next() {
 		var (
-			o     betOptionVM
-			names []string
-			amts  []int64
+			o         betOptionVM
+			names     []string
+			usernames []string
+			amts      []int64
 		)
-		if err := rows.Scan(&o.ID, &o.Label, &o.Stakes, &names, &amts); err != nil {
+		if err := rows.Scan(&o.ID, &o.Label, &o.Stakes, &names, &usernames, &amts); err != nil {
 			return nil, 0, err
 		}
 		n := len(names)
 		if len(amts) < n {
 			n = len(amts)
 		}
+		if len(usernames) < n {
+			n = len(usernames)
+		}
 		o.Bettors = make([]bettorVM, 0, n)
 		for i := 0; i < n; i++ {
-			o.Bettors = append(o.Bettors, bettorVM{Name: names[i], Amount: amts[i]})
+			o.Bettors = append(o.Bettors, bettorVM{Name: names[i], Username: usernames[i], Amount: amts[i]})
 		}
 		opts = append(opts, o)
 		total += o.Stakes
@@ -258,6 +252,9 @@ func (h *BetShowHandler) fetchOptions(ctx context.Context, betID string) ([]betO
 	}
 	for i := range opts {
 		opts[i].Ratio = computeRatio(opts[i].Stakes, total-opts[i].Stakes)
+		if total > 0 {
+			opts[i].Percent = int((opts[i].Stakes * 100) / total)
+		}
 	}
 	return opts, total, nil
 }
@@ -281,17 +278,17 @@ func (h *BetShowHandler) voteInfo(ctx context.Context, betID, uid string, isMod 
 func determineStatus(deadline *time.Time, winning *string, status string, votesTotal int) (string, bool, bool) {
 	now := time.Now().UTC()
 	pastDeadline := (deadline != nil && deadline.Before(now) && (winning == nil) && status == "open")
-	resolutionInProgress := (votesTotal > 0 && winning == nil && status == "open")
+	waitingConsensus := (votesTotal > 0 && winning == nil && status == "open")
 	alreadyClosed := (status != "open") || (winning != nil)
 
 	statusLabel := "Open"
 	switch {
 	case alreadyClosed:
 		statusLabel = "Closed"
+	case waitingConsensus:
+		statusLabel = "Waiting for consensus"
 	case pastDeadline:
 		statusLabel = "Past the deadline"
-	case resolutionInProgress:
-		statusLabel = "Resolution in progress"
 	}
 	return statusLabel, alreadyClosed, pastDeadline
 }
@@ -335,11 +332,11 @@ func (h *BetShowHandler) computePayouts(ctx context.Context, betID string, winni
 	}
 
 	rowsP, err := h.DB.Query(ctx, `
-            select u.display_name, sum(w.amount)::bigint
+            select u.display_name, u.username, sum(w.amount)::bigint
             from wagers w
             join users u on u.id = w.user_id
             where w.bet_id = $1::uuid and w.option_id = $2::uuid
-            group by u.display_name
+            group by u.display_name, u.username
             order by sum(w.amount) desc
         `, betID, *winning)
 	if err != nil {
@@ -349,23 +346,26 @@ func (h *BetShowHandler) computePayouts(ctx context.Context, betID string, winni
 
 	var (
 		tmp []struct {
-			Name string
-			Amt  int64
+			Name     string
+			Username string
+			Amt      int64
 		}
 		payouts []payoutVM
 	)
 	for rowsP.Next() {
 		var (
-			name string
-			amt  int64
+			name     string
+			username string
+			amt      int64
 		)
-		if err := rowsP.Scan(&name, &amt); err != nil {
+		if err := rowsP.Scan(&name, &username, &amt); err != nil {
 			return nil
 		}
 		tmp = append(tmp, struct {
-			Name string
-			Amt  int64
-		}{name, amt})
+			Name     string
+			Username string
+			Amt      int64
+		}{name, username, amt})
 	}
 	if rowsP.Err() != nil || len(tmp) == 0 {
 		return nil
@@ -379,7 +379,7 @@ func (h *BetShowHandler) computePayouts(ctx context.Context, betID string, winni
 		} else {
 			distributed += share
 		}
-		payouts = append(payouts, payoutVM{Name: t.Name, Amount: share})
+		payouts = append(payouts, payoutVM{Name: t.Name, Username: t.Username, Amount: share})
 	}
 	return payouts
 }

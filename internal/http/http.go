@@ -7,6 +7,8 @@ import (
 
 	"betsandpedestres/internal/config"
 	"betsandpedestres/internal/http/middleware"
+	"betsandpedestres/internal/notify"
+	"betsandpedestres/internal/telegram"
 	"betsandpedestres/internal/web"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -19,13 +21,23 @@ func NewMux(db *pgxpool.Pool, cfg *config.Config) (*http.ServeMux, error) {
 		return nil, err
 	}
 
+	var notifier notify.Notifier = notify.Noop{}
+	if cfg.Telegram.BotToken != "" {
+		notifier = telegram.New(db, cfg.Telegram.BotToken, cfg.Telegram.GroupChatID)
+	}
+
 	mux.Handle("GET /", &HomeHandler{DB: db, TPL: rend})
 	mux.Handle("GET /transactions", &TransactionsHandler{DB: db, TPL: rend})
 	mux.Handle("GET /bets/new", &BetNewHandler{DB: db, TPL: rend})
-	mux.Handle("POST /bets", &BetCreateHandler{DB: db})
+	mux.Handle("POST /bets", &BetCreateHandler{DB: db, Notifier: notifier, BaseURL: cfg.BaseURL})
 	mux.Handle("GET /bets/{id}", &BetShowHandler{DB: db, TPL: rend, Quorum: cfg.Moderation.Quorum})
 	mux.Handle("POST /bets/{id}/wagers", &BetWagerCreateHandler{DB: db})
-	mux.Handle("POST /bets/{id}/resolve", &BetResolveHandler{DB: db, Quorum: cfg.Moderation.Quorum})
+	mux.Handle("POST /bets/{id}/resolve", &BetResolveHandler{DB: db, Quorum: cfg.Moderation.Quorum, Notifier: notifier, BaseURL: cfg.BaseURL})
+	mux.Handle("POST /register", &AccountRegisterHandler{DB: db, Notifier: notifier})
+	profileHandler := &UserProfileHandler{DB: db, TPL: rend, Notifier: notifier}
+	mux.Handle("GET /profile", profileHandler)
+	mux.Handle("GET /profile/{username}", profileHandler)
+	mux.Handle("POST /profile/{username}", profileHandler)
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
