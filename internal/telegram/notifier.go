@@ -90,9 +90,18 @@ func sendMessage(ctx context.Context, client *http.Client, token, chatID, msg st
 	if client == nil {
 		client = defaultHTTPClient
 	}
+	parseMode := ""
+	if strings.HasPrefix(msg, notify.HTMLPrefix) {
+		parseMode = "HTML"
+		msg = strings.TrimPrefix(msg, notify.HTMLPrefix)
+	}
 	payload := map[string]string{
 		"chat_id": chatID,
 		"text":    msg,
+	}
+	if parseMode != "" {
+		payload["parse_mode"] = parseMode
+		payload["disable_web_page_preview"] = "false"
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

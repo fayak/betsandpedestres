@@ -2,6 +2,8 @@ package notify
 
 import "context"
 
+const HTMLPrefix = "::html::"
+
 // Notifier sends notifications to admins or public channels.
 type Notifier interface {
 	NotifyAdmins(ctx context.Context, msg string)

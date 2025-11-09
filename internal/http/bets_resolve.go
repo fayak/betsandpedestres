@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -30,8 +31,9 @@ var (
 )
 
 type userPayout struct {
-	UserID string
-	Amount int64
+	UserID      string
+	DisplayName string
+	Amount      int64
 }
 
 type resolutionNotifications struct {
@@ -190,14 +192,16 @@ func finalizeBetPayout(ctx context.Context, tx pgx.Tx, betID, winningOptionID st
 
 	// Compute per-user winning sums
 	type win struct {
-		UserID string
-		Amount int64
+		UserID      string
+		DisplayName string
+		Amount      int64
 	}
 	rows, err := tx.Query(ctx, `
-	  select user_id::text, sum(amount)::bigint
-	  from wagers
-	  where bet_id = $1::uuid and option_id = $2::uuid
-	  group by user_id
+	  select w.user_id::text, coalesce(u.display_name, ''), sum(w.amount)::bigint
+	  from wagers w
+	  join users u on u.id = w.user_id
+	  where w.bet_id = $1::uuid and w.option_id = $2::uuid
+	  group by w.user_id, u.display_name
 	`, betID, winningOptionID)
 	if err != nil {
 		return nil, err
@@ -207,7 +211,7 @@ func finalizeBetPayout(ctx context.Context, tx pgx.Tx, betID, winningOptionID st
 	var winners []win
 	for rows.Next() {
 		var w win
-		if err := rows.Scan(&w.UserID, &w.Amount); err != nil {
+		if err := rows.Scan(&w.UserID, &w.DisplayName, &w.Amount); err != nil {
 			return nil, err
 		}
 		winners = append(winners, w)
@@ -245,7 +249,7 @@ func finalizeBetPayout(ctx context.Context, tx pgx.Tx, betID, winningOptionID st
 			`, txID, escrowAcctID, wallet, outgoing, share); err != nil {
 				return nil, err
 			}
-			payouts = append(payouts, userPayout{UserID: w.UserID, Amount: share})
+			payouts = append(payouts, userPayout{UserID: w.UserID, DisplayName: w.DisplayName, Amount: share})
 		}
 	}
 	return payouts, nil
@@ -304,7 +308,7 @@ func (h *BetResolveHandler) processResolution(ctx context.Context, uid, betID, o
 			totalPayout += p.Amount
 		}
 		notes.CloseAdminMessage = fmt.Sprintf("Admin %s forced bet '%s'. Winner: %s", actorName, betTitle, optionLabel)
-		notes.CloseGroupMessage = fmt.Sprintf("Bet resolved by admin: %s — Winner: %s\nTotal payout: 🦶 %d PiedPièces\n%s", betTitle, optionLabel, totalPayout, link)
+		notes.CloseGroupMessage = formatGroupResolutionMessage(betTitle, optionLabel, link, payouts, totalPayout)
 		if err := tx.Commit(ctx); err != nil {
 			return notes, err
 		}
@@ -348,7 +352,7 @@ func (h *BetResolveHandler) processResolution(ctx context.Context, uid, betID, o
 			totalPayout += payout.Amount
 		}
 		notes.CloseAdminMessage = fmt.Sprintf("Bet '%s' closed. Winner: %s", betTitle, winningLabel)
-		notes.CloseGroupMessage = fmt.Sprintf("Bet resolved: %s — Winner: %s\nTotal payout: 🦶 %d PiedPièces\n%s", betTitle, winningLabel, totalPayout, link)
+		notes.CloseGroupMessage = formatGroupResolutionMessage(betTitle, winningLabel, link, payouts, totalPayout)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -455,4 +459,41 @@ func (h *BetResolveHandler) consensusWinningOption(ctx context.Context, tx pgx.T
 		  limit 1
 		`, betID).Scan(&winOpt)
 	return winOpt, err
+}
+
+func formatGroupResolutionMessage(betTitle, optionLabel, link string, payouts []userPayout, totalPayout int64) string {
+	safeTitle := html.EscapeString(betTitle)
+	safeOption := html.EscapeString(optionLabel)
+	safeLink := html.EscapeString(link)
+	header := fmt.Sprintf("Bet resolved: <strong>%s</strong> ! 🎉", safeTitle)
+	if safeLink != "" {
+		header = fmt.Sprintf("Bet resolved: <a href=\"%s\"><strong>%s</strong></a> ! 🎉", safeLink, safeTitle)
+	}
+	winLine := formatWinnerLine(payouts)
+	body := fmt.Sprintf("%s\nThe winning option is: %s\n%s\nTotal payout: 🦶 %d PiedPièces", header, safeOption, winLine, totalPayout)
+	if safeLink != "" {
+		body += fmt.Sprintf("\n\n<a href=\"%s\">%s</a>", safeLink, safeLink)
+	}
+	return notify.HTMLPrefix + body
+}
+
+func formatWinnerLine(payouts []userPayout) string {
+	if len(payouts) == 0 {
+		return "No payouts were recorded on this bet."
+	}
+	seen := make(map[string]struct{})
+	names := make([]string, 0, len(payouts))
+	for _, p := range payouts {
+		name := strings.TrimSpace(p.DisplayName)
+		if name == "" {
+			name = "Anonymous"
+		}
+		safe := html.EscapeString(name)
+		if _, exists := seen[safe]; exists {
+			continue
+		}
+		seen[safe] = struct{}{}
+		names = append(names, safe)
+	}
+	return fmt.Sprintf("Congrats to %s!", strings.Join(names, ", "))
 }
