@@ -3,63 +3,91 @@
 {{end}}
 
 {{define "content"}}
-  <h1>{{.Content.Title}}</h1>
-  <p class="muted">
-    Page {{.Content.Page}} · Size {{.Content.Size}} · Chain:
-    {{if .Content.OverallOK}}<span style="color:#72e0a8">OK</span>{{else}}<span style="color:#f87171">BROKEN</span>{{end}}
-  </p>
+  <style>
+    .ledger-bg {position:relative; padding:28px; border-radius:24px; overflow:hidden; background:rgba(10,14,22,0.9); box-shadow:0 25px 60px rgba(0,0,0,0.45);}
+    .ledger-bg::before {content:""; position:absolute; inset:-40px; background:url('/assets/bogda.jpg') center/cover no-repeat fixed; opacity:0.32; filter:saturate(0.5) contrast(0.9); z-index:0;}
+    .ledger-bg::after {content:""; position:absolute; inset:0; background:linear-gradient(180deg,rgba(6,9,14,0.7),rgba(6,9,14,0.95)); z-index:0;}
+    .ledger-bg > * {position:relative; z-index:1;}
+    .ledger-table-wrap {overflow:auto; margin-top:18px; border-radius:16px; border:1px solid rgba(255,255,255,0.08); backdrop-filter:blur(2px);}
+    .ledger-table {width:100%; border-collapse:collapse; min-width:720px;}
+    .ledger-table thead th {text-align:left; padding:10px; font-size:0.85rem; letter-spacing:0.05em; text-transform:uppercase; border-bottom:1px solid rgba(255,255,255,0.12); background:rgba(8,11,18,0.75);}
+    .ledger-table tbody td {padding:10px; border-bottom:1px solid rgba(255,255,255,0.08); vertical-align:top;}
+    .ledger-table tbody tr:last-child td {border-bottom:none;}
+    .ledger-table code {font-size:12px;}
+    .ledger-entries div {font-size:12px; margin-bottom:2px;}
+    .ledger-nav {display:flex; gap:12px; flex-wrap:wrap; margin-top:20px;}
+    @media (max-width:768px){
+      .ledger-bg {padding:18px; border-radius:18px;}
+      .ledger-table {min-width:0; font-size:0.85rem;}
+      .ledger-table-wrap {margin-top:12px;}
+      .ledger-table thead {display:none;}
+      .ledger-table tbody tr {display:block; padding:12px; border-bottom:1px solid rgba(255,255,255,0.12);}
+      .ledger-table tbody td {display:flex; justify-content:space-between; gap:8px; border:none; padding:6px 0;}
+      .ledger-table tbody td::before {content:attr(data-label); font-weight:600; color:#e2e8f0;}
+    }
+  </style>
 
-  <div style="overflow:auto">
-    <table style="width:100%; border-collapse:collapse">
-      <thead>
-        <tr style="text-align:left; border-bottom:1px solid #2a2e39">
-          <th style="padding:8px">Time (UTC)</th>
-          <th style="padding:8px">Reason</th>
-          <th style="padding:8px">Bet</th>
-          <th style="padding:8px">Note</th>
-          <th style="padding:8px">Prev Hash</th>
-          <th style="padding:8px">Hash</th>
-          <th style="padding:8px">Entries</th>
-          <th style="padding:8px">Chain</th>
-        </tr>
-      </thead>
-      <tbody>
-      {{range .Content.Rows}}
-        <tr style="border-bottom:1px solid #2a2e39">
-          <td style="padding:8px"><span class="dt" data-iso="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z07:00" }}"></span></td>
-          <td style="padding:8px">{{.Reason}}</td>
-          <td style="padding:8px">{{if .BetID}}{{if .BetTitle}}<a href="/bets/{{.BetID}}">{{.BetTitle}}</a>{{else}}{{.BetID}}{{end}}{{else}}—{{end}}</td>
-          <td style="padding:8px">{{if .Note}}{{.Note}}{{else}}—{{end}}</td>
-          {{if .PrevHash}}
-          <td style="padding:8px"><code style="font-size:12px; color: #{{.PrevHash | trunc 6 }}">{{.PrevHash | trunc 12 }}</code></td>
-          {{else}}
-          <td style="padding:8px"><code style="font-size:12px">{{.PrevHash }}</code></td>
-          {{end}}
-          <td style="padding:8px"><code style="font-size:12px; color: #{{.Hash | trunc 6 }}">{{.Hash | trunc 12}}</code></td>
-          <td style="padding:8px">
-            {{range .Entries}}
-              <div style="font-size:12px">
-              {{if eq .AccountKind "wallet"}}
-                <b>user</b>: {{if .DisplayName}}{{.DisplayName}}{{else}}(unknown){{end}} · Δ {{.Delta}}
-              {{else}}
-                escrow · Δ {{.Delta}}
-              {{end}}
-              </div>
+  <div class="ledger-bg">
+    <h1>{{.Content.Title}}</h1>
+    <p class="muted">
+      Page {{.Content.Page}} · Size {{.Content.Size}} · Chain:
+      {{if .Content.OverallOK}}<span style="color:#72e0a8">OK</span>{{else}}<span style="color:#f87171">BROKEN</span>{{end}}
+    </p>
+
+    <div class="ledger-table-wrap">
+      <table class="ledger-table">
+        <thead>
+          <tr>
+            <th>Time (UTC)</th>
+            <th>Reason</th>
+            <th>Bet</th>
+            <th>Note</th>
+            <th>Prev Hash</th>
+            <th>Hash</th>
+            <th>Entries</th>
+            <th>Chain</th>
+          </tr>
+        </thead>
+        <tbody>
+        {{range .Content.Rows}}
+          <tr>
+            <td data-label="Time">
+              <span class="dt" data-iso="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z07:00" }}"></span>
+            </td>
+            <td data-label="Reason">{{.Reason}}</td>
+            <td data-label="Bet">{{if .BetID}}{{if .BetTitle}}<a href="/bets/{{.BetID}}">{{.BetTitle}}</a>{{else}}{{.BetID}}{{end}}{{else}}—{{end}}</td>
+            <td data-label="Note">{{if .Note}}{{.Note}}{{else}}—{{end}}</td>
+            {{if .PrevHash}}
+            <td data-label="Prev"><code style="color:#{{.PrevHash | trunc 6 }}">{{.PrevHash | trunc 12 }}</code></td>
+            {{else}}
+            <td data-label="Prev"><code>{{.PrevHash }}</code></td>
             {{end}}
-          </td>
-          <td style="padding:8px">{{if .ChainOK}}✅{{else}}❌{{end}}</td>
-        </tr>
-      {{end}}
-      </tbody>
-    </table>
+            <td data-label="Hash"><code style="color:#{{.Hash | trunc 6 }}">{{.Hash | trunc 12}}</code></td>
+            <td data-label="Entries" class="ledger-entries">
+              {{range .Entries}}
+                <div>
+                {{if eq .AccountKind "wallet"}}
+                  <b>user</b>: {{if .DisplayName}}{{.DisplayName}}{{else}}(unknown){{end}} · Δ {{.Delta}}
+                {{else}}
+                  escrow · Δ {{.Delta}}
+                {{end}}
+                </div>
+              {{end}}
+            </td>
+            <td data-label="Chain">{{if .ChainOK}}✅{{else}}❌{{end}}</td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <nav class="ledger-nav">
+      {{if .Content.HasPrev}}<a href="{{.PrevURL}}">← Prev</a>{{end}}
+      {{if .Content.HasNext}}<a href="{{.NextURL}}">Next →</a>{{end}}
+    </nav>
+
+    <p class="muted" style="margin-top:12px">
+      Tip: This checks continuity within the current page. Full verification requires scanning from the first transaction.
+    </p>
   </div>
-
-  <nav style="display:flex; gap:8px; margin-top:16px">
-    {{if .Content.HasPrev}}<a href="{{.PrevURL}}">← Prev</a>{{end}}
-    {{if .Content.HasNext}}<a href="{{.NextURL}}">Next →</a>{{end}}
-  </nav>
-
-  <p class="muted" style="margin-top:12px">
-    Tip: This checks continuity within the current page. Full verification requires scanning from the first transaction.
-  </p>
 {{end}}
