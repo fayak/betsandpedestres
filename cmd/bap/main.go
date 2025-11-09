@@ -17,6 +17,7 @@ import (
 	"betsandpedestres/internal/auth"
 	"betsandpedestres/internal/config"
 	"betsandpedestres/internal/db"
+	"betsandpedestres/internal/telegram"
 
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v5"
@@ -300,6 +301,14 @@ func giftAllCmd(args []string) {
 		log.Fatalf("gift all: %v", err)
 	}
 	fmt.Printf("ok: gifted %d PiedPièce(s) to each of %d user(s)\n", amount, n)
+
+	if cfg.Telegram.BotToken != "" && cfg.Telegram.GroupChatID != "" {
+		notifier := telegram.New(pool, cfg.Telegram.BotToken, cfg.Telegram.GroupChatID)
+		ctxNotify, cancelNotify := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelNotify()
+		msg := fmt.Sprintf("🪂 ALERT AIRDROP ! 🚨\n\nA gift of %d PiedPièces 🦶 was granted to everyone\n\nGo spend it all ! 🎰🎲", amount)
+		notifier.NotifyGroup(ctxNotify, msg)
+	}
 }
 
 const houseUsername = "house"
