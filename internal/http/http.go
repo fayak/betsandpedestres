@@ -38,6 +38,7 @@ func NewMux(db *pgxpool.Pool, cfg *config.Config) (*http.ServeMux, error) {
 	mux.Handle("GET /profile", profileHandler)
 	mux.Handle("GET /profile/{username}", profileHandler)
 	mux.Handle("POST /profile/{username}", profileHandler)
+	mux.Handle("GET /hof", &HallOfFameHandler{DB: db, TPL: rend})
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

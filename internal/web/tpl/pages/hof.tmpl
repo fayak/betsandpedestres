@@ -1,0 +1,36 @@
+{{define "hof"}}
+  {{template "base" .}}
+{{end}}
+
+{{define "content"}}
+  <h1>{{.Content.Title}}</h1>
+  <p class="muted">Top 50 users ranked by 🦶 PiedPièces (wallet + escrow).</p>
+  <div style="overflow-x:auto;">
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr style="text-align:left;">
+          <th style="padding:8px;">#</th>
+          <th style="padding:8px;">User</th>
+          <th style="padding:8px;">Wallet</th>
+          <th style="padding:8px;">In Escrow</th>
+          <th style="padding:8px;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $row := .Content.Rows}}
+          <tr style="border-top:1px solid #2a2e39;">
+            <td style="padding:8px;">{{$row.Rank}}</td>
+            <td style="padding:8px;"><a href="/profile/{{$row.Username}}">{{$row.DisplayName}}</a></td>
+            <td style="padding:8px;">🦶 {{$row.Balance}}</td>
+            <td style="padding:8px;">🦶 {{$row.Escrow}}</td>
+            <td style="padding:8px; font-weight:bold;">🦶 {{$row.Total}}</td>
+          </tr>
+        {{else}}
+          <tr>
+            <td colspan="5" style="padding:12px;" class="muted">No users yet.</td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+{{end}}
