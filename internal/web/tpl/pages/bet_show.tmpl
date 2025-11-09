@@ -3,8 +3,29 @@
 {{end}}
 
 {{define "content"}}
-  <h1>{{.Content.Title}}</h1>
-  <p class="muted">Created by {{if .Content.CreatorUsername}}<a href="/profile/{{.Content.CreatorUsername}}">{{.Content.CreatorName}}</a>{{else}}{{.Content.CreatorName}}{{end}}</p>
+  <style>
+    .bet-title-row {display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px;}
+    .resolve-link {background:#451a1a; border:1px solid #fca5a5; color:#fee2e2; padding:10px 16px; border-radius:14px; font-weight:600; text-transform:uppercase; letter-spacing:0.02em; align-self:flex-start; box-shadow:0 0 12px rgba(252,165,165,0.2);}
+    .resolve-link:hover {background:#7f1d1d; border-color:#fecaca;}
+    .bet-option-card {transition:background 0.2s ease, border-color 0.2s ease;}
+    .bet-option-card input.bet-radio {width:22px; height:22px; accent-color:#f97316; cursor:pointer;}
+    .bet-option-card.disabled {opacity:0.6; cursor:not-allowed;}
+    .wager-box {background:linear-gradient(180deg,#0f172a,#111827); border:1px solid #1f2937; border-radius:18px; padding:18px; margin-top:4px; box-shadow:0 10px 30px rgba(0,0,0,0.35);}
+    .amount-input-wrap {display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start;}
+    .amount-input-wrap input[type="number"] {padding:10px 12px; font-size:1.1rem; border-radius:12px; border:1px solid #475569; background:#0b1120; color:#f8fafc; min-width:140px;}
+    .wager-slider {width:100%; margin:12px 0; accent-color:#38bdf8;}
+    .wager-actions {display:flex; gap:10px; flex-wrap:wrap;}
+  </style>
+
+  <div class="bet-title-row">
+    <div>
+      <h1 style="margin-bottom:4px;">{{.Content.Title}}</h1>
+      <p class="muted">Created by {{if .Content.CreatorUsername}}<a href="/profile/{{.Content.CreatorUsername}}">{{.Content.CreatorName}}</a>{{else}}{{.Content.CreatorName}}{{end}}</p>
+    </div>
+    {{if and .Content.IsModerator (not .Content.AlreadyClosed)}}
+      <a class="resolve-link" href="/bets/{{.Content.BetID}}?mode=resolve">Close the bet &amp; select the outcome</a>
+    {{end}}
+  </div>
 
   {{if .Content.Description}}
     <p style="white-space:pre-wrap">{{.Content.Description}}</p>
@@ -57,10 +78,10 @@
   <form method="POST" action="/bets/{{.Content.BetID}}/resolve" style="display:grid; gap:16px; max-width:860px; margin-top:12px">
     <div class="opt-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
       {{range .Content.Options}}
-        <label class="opt-card" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#b91c1c{{end}}; border-radius:12px; padding:12px; display:block; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
+        <label class="opt-card bet-option-card" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#b91c1c{{end}}; border-radius:12px; padding:12px; display:block; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
           <div class="row" style="justify-content:space-between; align-items:center;">
             <div style="font-weight:600">{{.Label}}</div>
-            <input type="radio" name="option_id" value="{{.ID}}" required>
+            <input type="radio" class="bet-radio" name="option_id" value="{{.ID}}" required>
           </div>
           <div class="row" style="gap:10px; margin-top:6px; flex-wrap:wrap;">
             <span class="pill">🦶 Stakes: {{.Stakes}} PiedPièces</span>
@@ -99,11 +120,11 @@
   <form id="wagerForm" method="POST" action="/bets/{{.Content.BetID}}/wagers" style="display:grid; gap:16px; max-width:860px">
     <div class="opt-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
       {{range .Content.Options}}
-        <label class="opt-card" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#2a2e39{{end}}; border-radius:12px; padding:12px; display:block; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
+        <label class="opt-card bet-option-card{{if or (not $.Content.CanWager) $.Content.AlreadyClosed}} disabled{{end}}" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#2a2e39{{end}}; border-radius:12px; padding:12px; display:block; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
           <div class="row" style="justify-content:space-between; align-items:center;">
             <div style="font-weight:600">{{.Label}}</div>
             {{if and $.Content.CanWager (not $.Content.AlreadyClosed)}}
-              <input type="radio" name="option_id" value="{{.ID}}" required>
+              <input type="radio" class="bet-radio" name="option_id" value="{{.ID}}" required>
             {{end}}
           </div>
           <div class="row" style="gap:10px; margin-top:6px; flex-wrap:wrap;">
@@ -131,17 +152,26 @@
     {{end}}
 
     {{if and $.Content.CanWager (not $.Content.AlreadyClosed)}}
-      <div style="display:grid; gap:10px; max-width:420px; margin-top:8px;">
-        <label>
-          <div>Amount (max: 🦶 <span id="maxStake">{{.Content.MaxStake}}</span> PiedPièces)</div>
-          <input id="amount" name="amount" type="number" min="1" max="{{.Content.MaxStake}}" required>
-        </label>
-        <input type="hidden" name="idempotency_key" id="idemp" value="{{.Content.IdempotencyKey}}">
-        <div class="row" style="gap:8px;">
-          <button id="submitBtn" class="primary">Place wager</button>
-          <a class="pill" href="/bets/{{.Content.BetID}}">Cancel</a>
+      <div class="wager-box">
+        <div class="amount-input-wrap">
+          <div style="flex:1; min-width:220px;">
+            <label for="amount" style="font-weight:600; display:block; margin-bottom:6px;">Amount to wager</label>
+            <input id="amount" name="amount" type="number" min="1" max="{{.Content.MaxStake}}" placeholder="🦶 PiedPièces" required>
+            <div class="pill info-pill" style="margin-top:8px; display:inline-flex; align-items:center; gap:6px;">
+              Max: 🦶 <span id="maxStake">{{.Content.MaxStake}}</span> PiedPièces available
+            </div>
+          </div>
+          <div class="wager-actions" style="align-items:flex-start;">
+            <button id="submitBtn" class="primary">Place wager</button>
+            <a class="pill" href="/bets/{{.Content.BetID}}">Cancel</a>
+          </div>
         </div>
-        <p class="muted">Submitting will lock the amount into this bet’s escrow.</p>
+        <input type="range" id="amountSlider" class="wager-slider" min="0" max="{{.Content.MaxStake}}" value="0" {{if eq .Content.MaxStake 0}}disabled{{end}}>
+        <input type="hidden" name="idempotency_key" id="idemp" value="{{.Content.IdempotencyKey}}">
+        <p class="muted" style="margin:4px 0 0;">Use the slider or the field to choose how many 🦶 PiedPièces go into escrow.</p>
+        {{if eq .Content.MaxStake 0}}
+          <p class="muted" style="color:#fca5a5; margin-top:4px;">You currently have no free PiedPièces to wager.</p>
+        {{end}}
       </div>
     {{else if .Header.LoggedIn}}
       {{if .Content.AlreadyClosed}}
@@ -154,11 +184,6 @@
     {{else}}
       <p class="muted">Please log in to place a wager.</p>
     {{end}}
-  {{if and .Content.IsModerator (not .Content.AlreadyClosed)}}
-  <div class="row" style="margin:12px 0">
-    <a class="pill" style="background:#1f2937; border:1px solid #9ca3af; color:#f3f4f6" href="/bets/{{.Content.BetID}}?mode=resolve">Close the bet and select the outcome</a>
-  </div>
-{{end}}
   </form>
 {{end}}
 {{if and (eq .Content.StatusLabel "Closed") .Content.Payouts}}
@@ -177,24 +202,90 @@
 
   <script>
     // Make clicking the whole card check the radio (label+input already handles it).
-    // Enforce max and prevent double-submit.
+    // Enforce max, sync slider/field, and prevent double-submit.
     (function(){
-      const f  = document.getElementById('wagerForm');
-      const a  = document.getElementById('amount');
-      const b  = document.getElementById('submitBtn');
-      if (a && b && f) {
-        const mx = parseInt(document.getElementById('maxStake').textContent || '0', 10) || 0;
-        a.addEventListener('input', ()=> {
-          if (a.value) {
-            let v = parseInt(a.value,10)||0;
-            if (v > mx) v = mx;
-            if (v < 1)  v = 1;
-            a.value = v;
+      const form   = document.getElementById('wagerForm');
+      const amount = document.getElementById('amount');
+      const submit = document.getElementById('submitBtn');
+      const slider = document.getElementById('amountSlider');
+      const maxNode = document.getElementById('maxStake');
+      const maxVal = parseInt((maxNode && maxNode.textContent) || (amount && amount.max) || (slider && slider.max) || '0', 10) || 0;
+
+      const clamp = (val) => {
+        if (!maxVal) {
+          return 0;
+        }
+        if (val > maxVal) return maxVal;
+        if (val < 1) return 1;
+        return val;
+      };
+
+      const setSubmit = (enabled, reason) => {
+        if (!submit) return;
+        submit.disabled = !enabled;
+        if (!enabled && reason) {
+          submit.dataset.disabledReason = reason;
+          submit.title = reason;
+        } else {
+          if (submit.dataset.disabledReason) {
+            delete submit.dataset.disabledReason;
           }
+          submit.removeAttribute('title');
+        }
+      };
+
+      if (maxVal === 0 && submit) {
+        setSubmit(false, 'You have no free 🦶 PiedPièces available.');
+      }
+
+      if (slider && amount) {
+        slider.addEventListener('input', () => {
+          if (maxVal === 0) {
+            slider.value = '0';
+            amount.value = '';
+            setSubmit(false, 'You have no free 🦶 PiedPièces available.');
+            return;
+          }
+          let val = parseInt(slider.value, 10) || 0;
+          if (val === 0) {
+            amount.value = '';
+            setSubmit(false, 'Move the slider above 0 PiedPièces.');
+            return;
+          }
+          val = clamp(val);
+          slider.value = String(val);
+          amount.value = String(val);
+          setSubmit(true);
         });
-        f.addEventListener('submit', (e)=>{
-          if (b.dataset.busy === "1") { e.preventDefault(); return; }
-          b.dataset.busy = "1"; b.disabled = true;
+      }
+
+      if (amount) {
+        amount.addEventListener('input', () => {
+          if (maxVal === 0) {
+            amount.value = '';
+            if (slider) slider.value = '0';
+            setSubmit(false, 'You have no free 🦶 PiedPièces available.');
+            return;
+          }
+          let val = parseInt(amount.value, 10) || 0;
+          if (val <= 0) {
+            amount.value = '';
+            if (slider) slider.value = '0';
+            setSubmit(false, 'Enter at least 1 PiedPièce.');
+            return;
+          }
+          val = clamp(val);
+          amount.value = String(val);
+          if (slider) slider.value = String(val);
+          setSubmit(true);
+        });
+      }
+
+      if (form && submit) {
+        form.addEventListener('submit', (e)=>{
+          if (submit.dataset.busy === "1") { e.preventDefault(); return; }
+          submit.dataset.busy = "1";
+          submit.disabled = true;
         });
       }
     })();
