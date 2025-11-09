@@ -65,14 +65,26 @@ func (h *BetResolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	betID, optionID, err := parseResolutionForm(r)
+	betID, optionID, adminOverride, err := parseResolutionForm(r)
 	if err != nil {
 		slog.Error("no resultion form possible", "error", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	notes, err := h.processResolution(ctx, uid, betID, optionID)
+	role, err := middleware.GetUserRole(ctx, h.DB, uid)
+	if err != nil {
+		slog.Error("db error", "error", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	isAdmin := role == middleware.RoleAdmin
+	if adminOverride && !isAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	notes, err := h.processResolution(ctx, uid, betID, optionID, adminOverride)
 	if err != nil {
 		switch {
 		case errors.Is(err, errMissingFields):
@@ -243,19 +255,20 @@ func (h *BetResolveHandler) ensureModerator(ctx context.Context, uid string) (bo
 	return middleware.IsModerator(ctx, h.DB, uid)
 }
 
-func parseResolutionForm(r *http.Request) (string, string, error) {
+func parseResolutionForm(r *http.Request) (string, string, bool, error) {
 	betID := r.PathValue("id")
 	if err := r.ParseForm(); err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	optionID := strings.TrimSpace(r.Form.Get("option_id"))
 	if betID == "" || optionID == "" {
-		return "", "", errMissingFields
+		return "", "", false, errMissingFields
 	}
-	return betID, optionID, nil
+	adminOverride := r.Form.Get("admin_override") == "1"
+	return betID, optionID, adminOverride, nil
 }
 
-func (h *BetResolveHandler) processResolution(ctx context.Context, uid, betID, optionID string) (resolutionNotifications, error) {
+func (h *BetResolveHandler) processResolution(ctx context.Context, uid, betID, optionID string, adminOverride bool) (resolutionNotifications, error) {
 	notes := resolutionNotifications{}
 	tx, err := h.DB.Begin(ctx)
 	if err != nil {
@@ -271,6 +284,33 @@ func (h *BetResolveHandler) processResolution(ctx context.Context, uid, betID, o
 	if err != nil {
 		return notes, err
 	}
+
+	if adminOverride {
+		actorName, betTitle, optionLabel, creatorID, err := h.voteContext(ctx, tx, uid, betID, optionID)
+		if err != nil {
+			return notes, err
+		}
+		notes.BetTitle = betTitle
+		notes.CreatorID = creatorID
+		notes.WinningLabel = optionLabel
+		payouts, err := finalizeBetPayout(ctx, tx, betID, optionID)
+		if err != nil {
+			return notes, err
+		}
+		notes.Payouts = payouts
+		link := betLink(h.BaseURL, betID)
+		var totalPayout int64
+		for _, p := range payouts {
+			totalPayout += p.Amount
+		}
+		notes.CloseAdminMessage = fmt.Sprintf("Admin %s forced bet '%s'. Winner: %s", actorName, betTitle, optionLabel)
+		notes.CloseGroupMessage = fmt.Sprintf("Bet resolved by admin: %s — Winner: %s\nTotal payout: 🦶 %d PiedPièces\n%s", betTitle, optionLabel, totalPayout, link)
+		if err := tx.Commit(ctx); err != nil {
+			return notes, err
+		}
+		return notes, nil
+	}
+
 	if conflict {
 		return notes, errAwaitingAdmin
 	}

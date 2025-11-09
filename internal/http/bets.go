@@ -50,9 +50,12 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	modeResolve := r.URL.Query().Get("mode") == "resolve"
+	mode := r.URL.Query().Get("mode")
+	modeResolve := mode == "resolve"
+	modeAdmin := mode == "admin"
 
 	isMod := role == middleware.RoleModerator || role == middleware.RoleAdmin
+	isAdmin := role == middleware.RoleAdmin
 
 	bet, err := h.fetchBet(ctx, betID)
 	if err != nil {
@@ -87,6 +90,8 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	statusLabel, alreadyClosed, pastDeadline, waitingAdmin, waitingConsensus := determineStatus(bet.Deadline, bet.WinningOption, bet.Status, votesTotal, votesAgree)
 	deadlineDefined := bet.Deadline != nil
 	resolutionAllowed := (bet.Deadline == nil || pastDeadline)
+	adminOverrideMode := modeAdmin && isAdmin && !alreadyClosed && waitingAdmin
+	resolutionMode := (modeResolve && isMod && !alreadyClosed && !waitingAdmin) || adminOverrideMode
 
 	// compute user's max stake
 	var maxStake int64
@@ -122,10 +127,12 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ResolutionAllowed: resolutionAllowed,
 
 		IsModerator:         isMod,
-		ResolutionMode:      modeResolve && isMod && !alreadyClosed && !waitingAdmin,
+		IsAdmin:             isAdmin,
+		ResolutionMode:      resolutionMode,
 		AlreadyClosed:       alreadyClosed,
 		PastDeadline:        pastDeadline,
 		WaitingForAdmin:     waitingAdmin,
+		AdminOverrideMode:   adminOverrideMode,
 		WaitingForConsensus: waitingConsensus,
 		StatusLabel:         statusLabel,
 		VotesTotal:          votesTotal,

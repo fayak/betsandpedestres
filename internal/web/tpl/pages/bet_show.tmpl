@@ -7,6 +7,8 @@
     .bet-title-row {display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px;}
     .resolve-link {background:#451a1a; border:1px solid #fca5a5; color:#fee2e2; padding:10px 16px; border-radius:14px; font-weight:600; text-transform:uppercase; letter-spacing:0.02em; align-self:flex-start; box-shadow:0 0 12px rgba(252,165,165,0.2);}
     .resolve-link:hover {background:#7f1d1d; border-color:#fecaca;}
+    .resolve-link.admin-link {background:#0f172a; border-color:#38bdf8; color:#e0f2fe; box-shadow:0 0 12px rgba(56,189,248,0.25);}
+    .resolve-link.admin-link:hover {background:#172033; border-color:#7dd3fc;}
     .bet-option-card {transition:background 0.2s ease, border-color 0.2s ease; display:flex; gap:16px; align-items:stretch;}
     .bet-option-card.disabled {opacity:0.6; cursor:not-allowed;}
     .opt-main {flex:1; display:flex; flex-direction:column; gap:8px; min-width:0;}
@@ -17,7 +19,7 @@
     .bet-radio:checked::after {content:"";display:block;width:14px;height:14px;margin-left: -2px;background:#e2e8f0;}
     .bet-radio:focus-visible {outline:none;border-color:#93c5fd;box-shadow:0 0 0 2px rgba(147,197,253,0.35);}   
     .bet-radio:disabled {opacity:0.35; cursor:not-allowed; box-shadow:none; border-color:#475569;}
-    .wager-box {b/ackground:linear-gradient(180deg,#0f172a,#111827); border:1px solid #1f2937; border-radius:18px; padding:18px; margin-top:4px; box-shadow:0 10px 30px rgba(0,0,0,0.35);}
+    .wager-box {background:linear-gradient(180deg,#0f172a,#111827); border:1px solid #1f2937; border-radius:18px; padding:18px; margin-top:4px; box-shadow:0 10px 30px rgba(0,0,0,0.35);}
     .amount-input-wrap {display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start;}
     .amount-input-wrap input[type="number"] {padding:10px 12px; font-size:1.1rem; border-radius:12px; border:1px solid #475569; background:#0b1120; color:#f8fafc;}
     .wager-slider {width:100%; margin:12px 0; accent-color:#38bdf8;}
@@ -89,12 +91,22 @@
 
 
 {{if .Content.ResolutionMode}}
-  <div class="pill" style="background:#1f2937; border:1px solid #b91c1c">
-    ⚠️ <b>Moderator action:</b> Selecting the winning outcome will finalize payouts to winners
-    once a consensus is reached. Double-check the result and be honest.
-  </div>
+  {{if .Content.AdminOverrideMode}}
+    <div class="pill" style="background:#1f2937; border:1px solid #38bdf8">
+      🛡️ <b>Admin override:</b> You are forcibly selecting the winning outcome. This bypasses moderator votes
+      and immediately distributes payouts. Triple-check everything before confirming.
+    </div>
+  {{else}}
+    <div class="pill" style="background:#1f2937; border:1px solid #b91c1c">
+      ⚠️ <b>Moderator action:</b> Selecting the winning outcome will finalize payouts to winners
+      once a consensus is reached. Double-check the result and be honest.
+    </div>
+  {{end}}
 
   <form method="POST" action="/bets/{{.Content.BetID}}/resolve" style="display:grid; gap:16px; max-width:860px; margin-top:12px">
+    {{if .Content.AdminOverrideMode}}
+      <input type="hidden" name="admin_override" value="1">
+    {{end}}
     <div class="opt-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
       {{range .Content.Options}}
         <label class="opt-card bet-option-card" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#b91c1c{{end}}; border-radius:12px; padding:12px; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
@@ -123,7 +135,9 @@
     </div>
 
     <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap;">
-      <button class="primary" style="background:{{if .Content.ResolutionAllowed}}#dc2626{{else}}#4b5563{{end}}; cursor:{{if .Content.ResolutionAllowed}}pointer{{else}}not-allowed{{end}}" {{if not .Content.ResolutionAllowed}}disabled{{if .Content.DeadlineDefined}} title="You can only resolve once the deadline has passed."{{end}}{{end}}>Confirm outcome</button>
+      <button class="primary" style="background:{{if .Content.ResolutionAllowed}}#dc2626{{else}}#4b5563{{end}}; cursor:{{if .Content.ResolutionAllowed}}pointer{{else}}not-allowed{{end}}" {{if not .Content.ResolutionAllowed}}disabled{{if .Content.DeadlineDefined}} title="You can only resolve once the deadline has passed."{{end}}{{end}}>
+        {{if .Content.AdminOverrideMode}}Force outcome{{else}}Confirm outcome{{end}}
+      </button>
       <a class="pill" href="/bets/{{.Content.BetID}}">Cancel</a>
       {{if and (not .Content.ResolutionAllowed) .Content.DeadlineDefined}}
         <span class="muted">You can resolve once the bet deadline is over.</span>
@@ -136,6 +150,11 @@
     <div class="pill" style="background:#3f1d1d; border:1px solid #b91c1c; margin-bottom:12px;">
       Voting is locked because moderators disagree. Please escalate to an admin.
     </div>
+    {{if .Content.IsAdmin}}
+      <div class="row" style="margin-bottom:16px;">
+        <a class="resolve-link admin-link" href="/bets/{{.Content.BetID}}?mode=admin">Admin: close the bet</a>
+      </div>
+    {{end}}
   {{end}}
 
   <form id="wagerForm" method="POST" action="/bets/{{.Content.BetID}}/wagers" style="display:grid; gap:16px; max-width:860px">
