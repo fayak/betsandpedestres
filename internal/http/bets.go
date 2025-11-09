@@ -85,6 +85,8 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// ----- Determine status label -----
 	statusLabel, alreadyClosed, pastDeadline, waitingAdmin, waitingConsensus := determineStatus(bet.Deadline, bet.WinningOption, bet.Status, votesTotal, votesAgree)
+	deadlineDefined := bet.Deadline != nil
+	resolutionAllowed := (bet.Deadline == nil || pastDeadline)
 
 	// compute user's max stake
 	var maxStake int64
@@ -104,18 +106,20 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	payouts = h.computePayouts(ctx, betID, bet.WinningOption, alreadyClosed)
 
 	content := betShowContent{
-		BetID:           betID,
-		Title:           bet.Title,
-		Description:     bet.Description,
-		ExternalURL:     bet.ExternalURL,
-		Deadline:        bet.Deadline,
-		Options:         opts,
-		TotalStakes:     total,
-		CreatorName:     bet.CreatorName,
-		CreatorUsername: bet.CreatorUsername,
-		CanWager:        canWager,
-		MaxStake:        maxStake,
-		IdempotencyKey:  randomHex(16),
+		BetID:             betID,
+		Title:             bet.Title,
+		Description:       bet.Description,
+		ExternalURL:       bet.ExternalURL,
+		Deadline:          bet.Deadline,
+		DeadlineDefined:   deadlineDefined,
+		Options:           opts,
+		TotalStakes:       total,
+		CreatorName:       bet.CreatorName,
+		CreatorUsername:   bet.CreatorUsername,
+		CanWager:          canWager,
+		MaxStake:          maxStake,
+		IdempotencyKey:    randomHex(16),
+		ResolutionAllowed: resolutionAllowed,
 
 		IsModerator:         isMod,
 		ResolutionMode:      modeResolve && isMod && !alreadyClosed && !waitingAdmin,

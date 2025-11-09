@@ -45,14 +45,16 @@ type betShowContent struct {
 	Description     *string
 	ExternalURL     *string
 	Deadline        *time.Time
+	DeadlineDefined bool
 	Options         []betOptionVM
 	TotalStakes     int64
 	CreatorName     string
 	CreatorUsername string
 
-	CanWager       bool
-	MaxStake       int64 // user's current balance (server-enforced too)
-	IdempotencyKey string
+	CanWager          bool
+	MaxStake          int64 // user's current balance (server-enforced too)
+	IdempotencyKey    string
+	ResolutionAllowed bool
 
 	ResolutionMode      bool
 	IsModerator         bool
