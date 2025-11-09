@@ -11,10 +11,12 @@
     .bet-option-card.disabled {opacity:0.6; cursor:not-allowed;}
     .opt-main {flex:1; display:flex; flex-direction:column; gap:8px; min-width:0;}
     .opt-radio-wrap {display:flex; align-items:center; justify-content:center; min-width:30px;}
-    .bet-radio {appearance:none;-webkit-appearance:none;width:30px;height:30px;border-radius:8px;border:2px solid #f97316;background:#0b1a2a;box-shadow:0 0 10px rgba(249,115,22,0.2);cursor:pointer;transition:transform 0.2s ease, background 0.2s ease;}
-    .bet-radio:checked {background:#f97316;}
-    .bet-radio:checked::after {content:"";width:14px;height:14px;border-radius:4px;background:#0b0c10;display:block;margin:auto;}
-    .bet-radio:disabled {opacity:0.4; cursor:not-allowed; box-shadow:none;}
+    .bet-radio {appearance:none;-webkit-appearance:none;width:32px;height:32px;border-radius:0;border:2px solid #3f4b63;background:#0c1524;box-shadow:0 0 0 1px rgba(148,163,184,0.35);cursor:pointer;transition:box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;}
+    .bet-radio:hover:not(:disabled) {border-color:#60a5fa;box-shadow:0 0 12px rgba(96,165,250,0.35);}    
+    .bet-radio:checked {background:#1e293b;border-color:#60a5fa;box-shadow:0 0 12px rgba(96,165,250,0.55);}   
+    .bet-radio:checked::after {content:"";display:block;width:14px;height:14px;margin:8px auto;background:#e2e8f0;}
+    .bet-radio:focus-visible {outline:none;border-color:#93c5fd;box-shadow:0 0 0 2px rgba(147,197,253,0.35);}   
+    .bet-radio:disabled {opacity:0.35; cursor:not-allowed; box-shadow:none; border-color:#475569;}
     .wager-box {background:linear-gradient(180deg,#0f172a,#111827); border:1px solid #1f2937; border-radius:18px; padding:18px; margin-top:4px; box-shadow:0 10px 30px rgba(0,0,0,0.35);}
     .amount-input-wrap {display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start;}
     .amount-input-wrap input[type="number"] {padding:10px 12px; font-size:1.1rem; border-radius:12px; border:1px solid #475569; background:#0b1120; color:#f8fafc; min-width:140px;}
