@@ -471,9 +471,6 @@ func formatGroupResolutionMessage(betTitle, optionLabel, link string, payouts []
 	}
 	winLine := formatWinnerLine(payouts)
 	body := fmt.Sprintf("%s\nThe winning option is: %s\n%s\nTotal payout: 🦶 %d PiedPièces", header, safeOption, winLine, totalPayout)
-	if safeLink != "" {
-		body += fmt.Sprintf("\n\n<a href=\"%s\">%s</a>", safeLink, safeLink)
-	}
 	return notify.HTMLPrefix + body
 }
 
