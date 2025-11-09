@@ -155,9 +155,14 @@ func (h *BetWagerCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	var totalStakes int64
+	if err := h.DB.QueryRow(ctx, `select coalesce(sum(amount),0)::bigint from wagers where bet_id = $1::uuid`, betID).Scan(&totalStakes); err != nil {
+		totalStakes = amount
+	}
+
 	if h.Notifier != nil {
 		link := betLink(h.BaseURL, betID)
-		groupMsg := formatWagerGroupMessage(bettorName, amount, betTitle, link)
+		groupMsg := formatWagerGroupMessage(bettorName, amount, betTitle, optionLabel, link, totalStakes)
 		h.Notifier.NotifyGroup(r.Context(), groupMsg)
 		if creatorID != "" && creatorID != uid {
 			userMsg := fmt.Sprintf("Your bet \"%s\" received a new wager from %s: 🦶 %d PiedPièces on %s.\n%s", betTitle, bettorName, amount, optionLabel, link)
@@ -202,18 +207,19 @@ func randomHex(n int) string {
 	return fmt.Sprintf("%x", b)
 }
 
-func formatWagerGroupMessage(bettor string, amount int64, betTitle, link string) string {
+func formatWagerGroupMessage(bettor string, amount int64, betTitle, optionLabel, link string, total int64) string {
 	safeBettor := html.EscapeString(strings.TrimSpace(bettor))
 	if safeBettor == "" {
 		safeBettor = "Anonymous"
 	}
 	safeTitle := html.EscapeString(betTitle)
 	safeLink := html.EscapeString(link)
+	safeOption := html.EscapeString(optionLabel)
 	emojis := wagerEmojis(amount)
 	if emojis != "" {
 		emojis = " " + emojis
 	}
-	msg := fmt.Sprintf("<strong>%s</strong> wagered 🦶 %d PiedPièces%s on <strong><a href=\"%s\">%s</a></strong> !", safeBettor, amount, emojis, safeLink, safeTitle)
+	msg := fmt.Sprintf("<strong>%s</strong> wagered 🦶 %d PiedPièces%s on <strong><a href=\"%s\">%s</a></strong> !\nOption: <em>%s</em>\nTotal wagers on this bet: 🦶 %d PiedPièces", safeBettor, amount, emojis, safeLink, safeTitle, safeOption, total)
 	return notify.HTMLPrefix + msg
 }
 
