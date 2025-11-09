@@ -21,8 +21,13 @@
   {{if eq .Content.StatusLabel "Open"}}<span class="pill">Open</span>{{end}}
   {{if eq .Content.StatusLabel "Past the deadline"}}<span class="pill" style="background:#806400; border:1px solid #facc15; color:#000;">Past the deadline</span>{{end}}
   {{if eq .Content.StatusLabel "Waiting for consensus"}}
-    <span class="pill" style="background:#7c2d12; border:1px solid #fb923c">
+    <span class="pill" style="background:#f97316; border:1px solid #fb923c">
       Waiting for consensus — votes: {{.Content.VotesTotal}} / {{.Content.Quorum}}
+    </span>
+  {{end}}
+  {{if eq .Content.StatusLabel "Waiting for admin decision"}}
+    <span class="pill" style="background:#7c2d12; border:1px solid #b91c1c">
+      Waiting for an admin decision
     </span>
   {{end}}
   {{if eq .Content.StatusLabel "Closed"}}
@@ -85,6 +90,11 @@
   </form>
 
 {{else}}
+  {{if and .Content.IsModerator .Content.WaitingForAdmin}}
+    <div class="pill" style="background:#3f1d1d; border:1px solid #b91c1c; margin-bottom:12px;">
+      Voting is locked because moderators disagree. Please escalate to an admin.
+    </div>
+  {{end}}
 
   <form id="wagerForm" method="POST" action="/bets/{{.Content.BetID}}/wagers" style="display:grid; gap:16px; max-width:860px">
     <div class="opt-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
@@ -136,6 +146,8 @@
     {{else if .Header.LoggedIn}}
       {{if .Content.AlreadyClosed}}
         <p class="muted">This bet is closed.</p>
+      {{else if or .Content.WaitingForConsensus .Content.WaitingForAdmin}}
+        <p class="muted">Wagering paused while the bet is {{.Content.StatusLabel}}.</p>
       {{else}}
         <p class="muted">You can’t place a wager right now.</p>
       {{end}}

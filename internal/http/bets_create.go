@@ -106,8 +106,10 @@ func (h *BetCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.Notifier != nil {
-		message := fmt.Sprintf("New bet created: %s\n%s", form.Title, betLink(h.BaseURL, betID))
+		link := betLink(h.BaseURL, betID)
+		message := fmt.Sprintf("New bet created: %s\n%s", form.Title, link)
 		h.Notifier.NotifyGroup(r.Context(), message)
+		h.Notifier.NotifyUser(r.Context(), uid, fmt.Sprintf("Your bet \"%s\" is live!\n%s", form.Title, link))
 	}
 
 	// Redirect to bet page

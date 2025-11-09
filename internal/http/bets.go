@@ -70,7 +70,7 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
-	myVote, votesTotal := h.voteInfo(ctx, betID, uid, isMod)
+	myVote, votesTotal, votesAgree := h.voteInfo(ctx, betID, uid, isMod)
 	var myVoteLabel *string
 	if myVote != nil {
 		for i := range opts {
@@ -84,7 +84,7 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ----- Determine status label -----
-	statusLabel, alreadyClosed, pastDeadline := determineStatus(bet.Deadline, bet.WinningOption, bet.Status, votesTotal)
+	statusLabel, alreadyClosed, pastDeadline, waitingAdmin, waitingConsensus := determineStatus(bet.Deadline, bet.WinningOption, bet.Status, votesTotal, votesAgree)
 
 	// compute user's max stake
 	var maxStake int64
@@ -92,7 +92,7 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		maxStake = h.userBalance(ctx, uid)
 	}
 
-	canWager := header.LoggedIn && !modeResolve && !alreadyClosed && !pastDeadline
+	canWager := header.LoggedIn && !modeResolve && !alreadyClosed && !pastDeadline && votesTotal == 0
 	if canWager {
 		maxStake = h.userBalance(ctx, uid)
 	}
@@ -117,18 +117,20 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		MaxStake:        maxStake,
 		IdempotencyKey:  randomHex(16),
 
-		IsModerator:     isMod,
-		ResolutionMode:  modeResolve && isMod && !alreadyClosed,
-		AlreadyClosed:   alreadyClosed,
-		PastDeadline:    pastDeadline,
-		StatusLabel:     statusLabel,
-		VotesTotal:      votesTotal,
-		Quorum:          h.Quorum,
-		MyVoteOptionID:  myVote,
-		MyVoteLabel:     myVoteLabel,
-		WinningOptionID: bet.WinningOption,
-		WinningLabel:    winningLabel,
-		Payouts:         payouts,
+		IsModerator:         isMod,
+		ResolutionMode:      modeResolve && isMod && !alreadyClosed && !waitingAdmin,
+		AlreadyClosed:       alreadyClosed,
+		PastDeadline:        pastDeadline,
+		WaitingForAdmin:     waitingAdmin,
+		WaitingForConsensus: waitingConsensus,
+		StatusLabel:         statusLabel,
+		VotesTotal:          votesTotal,
+		Quorum:              h.Quorum,
+		MyVoteOptionID:      myVote,
+		MyVoteLabel:         myVoteLabel,
+		WinningOptionID:     bet.WinningOption,
+		WinningLabel:        winningLabel,
+		Payouts:             payouts,
 	}
 
 	page := web.Page[betShowContent]{Header: header, Content: content}
@@ -260,7 +262,7 @@ func (h *BetShowHandler) fetchOptions(ctx context.Context, betID string) ([]betO
 	return opts, total, nil
 }
 
-func (h *BetShowHandler) voteInfo(ctx context.Context, betID, uid string, isMod bool) (*string, int) {
+func (h *BetShowHandler) voteInfo(ctx context.Context, betID, uid string, isMod bool) (*string, int, bool) {
 	var myVote *string
 	if isMod {
 		_ = h.DB.QueryRow(ctx, `
@@ -270,28 +272,44 @@ func (h *BetShowHandler) voteInfo(ctx context.Context, betID, uid string, isMod 
     `, betID, uid).Scan(&myVote)
 	}
 	var votesTotal int
-	_ = h.DB.QueryRow(ctx, `
-    select count(*)::int from bet_resolution_votes where bet_id = $1::uuid
-`, betID).Scan(&votesTotal)
-	return myVote, votesTotal
+	var votesAgree bool
+	err := h.DB.QueryRow(ctx, `
+    with v as (
+        select option_id, count(*) as c
+        from bet_resolution_votes
+        where bet_id = $1::uuid
+        group by option_id
+    )
+    select coalesce(sum(c),0) as total_votes,
+           case when count(*) <= 1 then true else false end as all_agree
+    from v
+`, betID).Scan(&votesTotal, &votesAgree)
+	if err != nil {
+		votesTotal = 0
+		votesAgree = true
+	}
+	return myVote, votesTotal, votesAgree
 }
 
-func determineStatus(deadline *time.Time, winning *string, status string, votesTotal int) (string, bool, bool) {
+func determineStatus(deadline *time.Time, winning *string, status string, votesTotal int, votesAgree bool) (string, bool, bool, bool, bool) {
 	now := time.Now().UTC()
 	pastDeadline := (deadline != nil && deadline.Before(now) && (winning == nil) && status == "open")
-	waitingConsensus := (votesTotal > 0 && winning == nil && status == "open")
+	waitingConsensus := (votesTotal > 0 && votesAgree && winning == nil && status == "open")
+	waitingAdmin := (votesTotal > 0 && !votesAgree && winning == nil && status == "open")
 	alreadyClosed := (status != "open") || (winning != nil)
 
 	statusLabel := "Open"
 	switch {
 	case alreadyClosed:
 		statusLabel = "Closed"
+	case waitingAdmin:
+		statusLabel = "Waiting for admin decision"
 	case waitingConsensus:
 		statusLabel = "Waiting for consensus"
 	case pastDeadline:
 		statusLabel = "Past the deadline"
 	}
-	return statusLabel, alreadyClosed, pastDeadline
+	return statusLabel, alreadyClosed, pastDeadline, waitingAdmin, waitingConsensus
 }
 
 func (h *BetShowHandler) userBalance(ctx context.Context, uid string) int64 {

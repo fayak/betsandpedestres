@@ -112,8 +112,11 @@ func (p *Poller) handleUpdate(ctx context.Context, upd update) {
 	text := strings.TrimSpace(upd.Message.Text)
 	lower := strings.ToLower(text)
 	slog.Info("Telegram: received a message", "tg_message", lower)
-	if strings.HasPrefix(lower, "/register") {
+	switch {
+	case strings.HasPrefix(lower, "/register"):
 		p.handleRegister(ctx, upd.Message, text)
+	case strings.HasPrefix(lower, "/chatid"):
+		p.reply(upd.Message.Chat.ID, fmt.Sprintf("Your chat ID is %d", upd.Message.Chat.ID))
 	}
 }
 

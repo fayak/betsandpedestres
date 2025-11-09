@@ -56,20 +56,28 @@ func (h *BetWagerCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 	defer tx.Rollback(ctx)
 
-	// 1) Validate bet + option belong together and bet open & not past deadline
-	var ok bool
+	// 1) Validate bet + option belong together and bet open & not past deadline & no votes yet
+	var (
+		ok        bool
+		creatorID string
+		betTitle  string
+	)
 	err = tx.QueryRow(ctx, `
-		select (b.status = 'open') and (b.deadline is null or b.deadline > now() at time zone 'utc')
+		select (b.status = 'open')
+		       and (b.deadline is null or b.deadline > now() at time zone 'utc')
+		       and not exists (select 1 from bet_resolution_votes v where v.bet_id = b.id) as can_wager,
+		       b.creator_user_id::text,
+		       b.title
 		from bet_options o
 		join bets b on b.id = o.bet_id
 		where o.id = $1 and b.id = $2
-	`, optionID, betID).Scan(&ok)
+	`, optionID, betID).Scan(&ok, &creatorID, &betTitle)
 	if err != nil {
 		http.Error(w, "invalid bet or option", http.StatusBadRequest)
 		return
 	}
 	if !ok {
-		http.Error(w, "bet is closed or past deadline", http.StatusConflict)
+		http.Error(w, "bet is closed, past deadline, or awaiting resolution", http.StatusConflict)
 		return
 	}
 
@@ -138,6 +146,16 @@ func (h *BetWagerCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	if err := tx.Commit(ctx); err != nil {
 		http.Error(w, "commit error", http.StatusInternalServerError)
 		return
+	}
+
+	if h.Notifier != nil {
+		link := betLink(h.BaseURL, betID)
+		groupMsg := fmt.Sprintf("New wager on \"%s\": 🦶 %d PiedPièces\n%s", betTitle, amount, link)
+		h.Notifier.NotifyGroup(r.Context(), groupMsg)
+		if creatorID != "" && creatorID != uid {
+			userMsg := fmt.Sprintf("Your bet \"%s\" received a new wager of 🦶 %d PiedPièces.\n%s", betTitle, amount, link)
+			h.Notifier.NotifyUser(r.Context(), creatorID, userMsg)
+		}
 	}
 
 	http.Redirect(w, r, "/bets/"+betID+"?note=placed", http.StatusSeeOther)

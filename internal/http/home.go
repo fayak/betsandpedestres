@@ -42,6 +42,7 @@ type betCard struct {
 	ExpiresIn     string
 	WinningOption *string
 	VoteCount     int
+	VotesAgree    bool
 }
 
 type creatorOpt struct {
@@ -273,6 +274,8 @@ select
   ) as opt_stakes,
   b.status,
   (select count(*)::int from bet_resolution_votes v where v.bet_id = b.id) as vote_count,
+  (select case when count(distinct option_id) <= 1 then true else false end
+     from bet_resolution_votes v where v.bet_id = b.id) as votes_agree,
   b.resolution_option_id::text as winning_option
 from bets b
 join users u on u.id = b.creator_user_id
@@ -295,7 +298,7 @@ limit ` + limitPH + `::int offset ` + offsetPH + `::int
 		var bc betCard
 		var optLabels []string
 		var optStakes []int64
-		if err := rows.Scan(&bc.ID, &bc.Title, &bc.CreatorName, &bc.CreatorUser, &bc.CreatedAt, &bc.Deadline, &bc.Stakes, &bc.Participants, &optLabels, &optStakes, &bc.Status, &bc.VoteCount, &bc.WinningOption); err != nil {
+		if err := rows.Scan(&bc.ID, &bc.Title, &bc.CreatorName, &bc.CreatorUser, &bc.CreatedAt, &bc.Deadline, &bc.Stakes, &bc.Participants, &optLabels, &optStakes, &bc.Status, &bc.VoteCount, &bc.VotesAgree, &bc.WinningOption); err != nil {
 			http.Error(w, "scan error", http.StatusInternalServerError)
 			return
 		}
@@ -428,19 +431,22 @@ func buildOptionSummaries(labels []string, stakes []int64, total int64) []betOpt
 }
 
 func decorateBetCard(bc *betCard) {
-	bc.StatusLabel, bc.StatusColor = statusBadge(bc.Deadline, bc.WinningOption, bc.Status, bc.VoteCount)
+	bc.StatusLabel, bc.StatusColor = statusBadge(bc.Deadline, bc.WinningOption, bc.Status, bc.VoteCount, bc.VotesAgree)
 	bc.ExpiresIn = formatExpiresIn(bc.Deadline)
 }
 
-func statusBadge(deadline *time.Time, winning *string, status string, votes int) (string, string) {
+func statusBadge(deadline *time.Time, winning *string, status string, votes int, votesAgree bool) (string, string) {
 	now := time.Now().UTC()
-	pastDeadline := (deadline != nil && deadline.Before(now) && winning == nil && status == "open")
-	waitingConsensus := (votes > 0 && winning == nil && status == "open")
+	pastDeadline := (deadline != nil && deadline.Before(now) && winning == nil && status == "open" && votes == 0)
+	waitingConsensus := (votes > 0 && votesAgree && winning == nil && status == "open")
+	waitingAdmin := (votes > 0 && !votesAgree && winning == nil && status == "open")
 	alreadyClosed := (status != "open") || (winning != nil)
 
 	switch {
 	case alreadyClosed:
 		return "Closed", "#5c1c1c"
+	case waitingAdmin:
+		return "Waiting for admin decision", "#7c2d12"
 	case waitingConsensus:
 		return "Waiting for consensus", "#f97316"
 	case pastDeadline:

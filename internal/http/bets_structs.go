@@ -3,6 +3,7 @@ package http
 import (
 	"time"
 
+	"betsandpedestres/internal/notify"
 	"betsandpedestres/internal/web"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -17,7 +18,9 @@ type betNewContent struct {
 }
 
 type BetWagerCreateHandler struct {
-	DB *pgxpool.Pool
+	DB       *pgxpool.Pool
+	Notifier notify.Notifier
+	BaseURL  string
 }
 
 type bettorVM struct {
@@ -51,17 +54,19 @@ type betShowContent struct {
 	MaxStake       int64 // user's current balance (server-enforced too)
 	IdempotencyKey string
 
-	ResolutionMode  bool
-	IsModerator     bool
-	AlreadyClosed   bool
-	PastDeadline    bool
-	StatusLabel     string // "Open" | "Past deadline" | "Resolution in progress" | "Closed"
-	VotesTotal      int
-	Quorum          int
-	MyVoteOptionID  *string
-	MyVoteLabel     *string
-	WinningOptionID *string
-	WinningLabel    *string
+	ResolutionMode      bool
+	IsModerator         bool
+	AlreadyClosed       bool
+	PastDeadline        bool
+	WaitingForConsensus bool
+	WaitingForAdmin     bool
+	StatusLabel         string // "Open" | "Past deadline" | "Resolution in progress" | "Closed"
+	VotesTotal          int
+	Quorum              int
+	MyVoteOptionID      *string
+	MyVoteLabel         *string
+	WinningOptionID     *string
+	WinningLabel        *string
 
 	Payouts []payoutVM
 }

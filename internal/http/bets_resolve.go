@@ -26,12 +26,22 @@ var (
 	errMissingFields    = errors.New("missing fields")
 	errInvalidBetOption = errors.New("invalid bet/option")
 	errBetNotOpen       = errors.New("bet not open")
+	errAwaitingAdmin    = errors.New("awaiting admin decision")
 )
+
+type userPayout struct {
+	UserID string
+	Amount int64
+}
 
 type resolutionNotifications struct {
 	VoteMessage       string
 	CloseAdminMessage string
 	CloseGroupMessage string
+	BetTitle          string
+	CreatorID         string
+	WinningLabel      string
+	Payouts           []userPayout
 }
 
 func (h *BetResolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +83,8 @@ func (h *BetResolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, errBetNotOpen):
 			slog.Error("bet not open", "error", err)
 			http.Error(w, err.Error(), http.StatusConflict)
+		case errors.Is(err, errAwaitingAdmin):
+			http.Error(w, "bet awaiting admin decision", http.StatusConflict)
 		default:
 			slog.Error("db error", "error", err)
 			http.Error(w, "db error", http.StatusInternalServerError)
@@ -86,26 +98,34 @@ func (h *BetResolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if notes.CloseAdminMessage != "" {
 		h.Notifier.NotifyAdmins(ctx, notes.CloseAdminMessage)
 	}
+	link := betLink(h.BaseURL, betID)
 	if notes.CloseGroupMessage != "" {
 		h.Notifier.NotifyGroup(ctx, notes.CloseGroupMessage)
+	}
+	if notes.CreatorID != "" && notes.WinningLabel != "" {
+		h.Notifier.NotifyUser(ctx, notes.CreatorID, fmt.Sprintf("Your bet \"%s\" resolved. Winner: %s\n%s", notes.BetTitle, notes.WinningLabel, link))
+	}
+	for _, p := range notes.Payouts {
+		h.Notifier.NotifyUser(ctx, p.UserID, fmt.Sprintf("You received 🦶 %d PiedPièces from bet \"%s\".\n%s", p.Amount, notes.BetTitle, link))
 	}
 	http.Redirect(w, r, "/bets/"+betID, http.StatusSeeOther)
 }
 
-func finalizeBetPayout(ctx context.Context, tx pgx.Tx, betID, winningOptionID string) error {
+func finalizeBetPayout(ctx context.Context, tx pgx.Tx, betID, winningOptionID string) ([]userPayout, error) {
+	var payouts []userPayout
 	// Mark bet as closed with resolution
 	if _, err := tx.Exec(ctx, `
 	  update bets
 	  set status = 'closed', resolution_option_id = $2::uuid, resolved_at = now() at time zone 'utc'
 	  where id = $1::uuid
 	`, betID, winningOptionID); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Get escrow account
 	var escrowAcctID string
 	if err := tx.QueryRow(ctx, `select id::text from accounts where bet_id = $1::uuid`, betID).Scan(&escrowAcctID); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Sum escrow balance (from ledger snapshot via user_balances equivalent for account)
@@ -116,7 +136,7 @@ func finalizeBetPayout(ctx context.Context, tx pgx.Tx, betID, winningOptionID st
 	  from wagers
 	  where bet_id = $1::uuid
 	`, betID).Scan(&escrowTotal); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Winning pot = sum of wagers on winning option
@@ -126,7 +146,7 @@ func finalizeBetPayout(ctx context.Context, tx pgx.Tx, betID, winningOptionID st
 	  from wagers
 	  where bet_id = $1::uuid and option_id = $2::uuid
 	`, betID, winningOptionID).Scan(&winTotal); err != nil {
-		return err
+		return nil, err
 	}
 
 	// If no winners (winTotal == 0): define policy. We'll transfer back to house.
@@ -140,20 +160,20 @@ func finalizeBetPayout(ctx context.Context, tx pgx.Tx, betID, winningOptionID st
 		  where u.username = 'house' and a.is_default
 		  limit 1
 		`).Scan(&houseAcct); err != nil {
-			return err
+			return nil, err
 		}
 		var txID string
 		if err := tx.QueryRow(ctx, `insert into transactions (reason, bet_id, note) values ('BET', $1::uuid, 'no winners – to house') returning id::text`, betID).Scan(&txID); err != nil {
-			return err
+			return nil, err
 		}
 		outgoing := -escrowTotal
 		if _, err := tx.Exec(ctx, `
 		  insert into ledger_entries (tx_id, account_id, delta)
 		  values ($1, $2, $4), ($1, $3, $5)
 		`, txID, escrowAcctID, houseAcct, outgoing, escrowTotal); err != nil {
-			return err
+			return nil, err
 		}
-		return nil
+		return payouts, nil
 	}
 
 	// Compute per-user winning sums
@@ -168,7 +188,7 @@ func finalizeBetPayout(ctx context.Context, tx pgx.Tx, betID, winningOptionID st
 	  group by user_id
 	`, betID, winningOptionID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -176,18 +196,18 @@ func finalizeBetPayout(ctx context.Context, tx pgx.Tx, betID, winningOptionID st
 	for rows.Next() {
 		var w win
 		if err := rows.Scan(&w.UserID, &w.Amount); err != nil {
-			return err
+			return nil, err
 		}
 		winners = append(winners, w)
 	}
 	if err := rows.Err(); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Prepare payouts: proportional, with integer rounding; last payout adjusts remainder
 	var txID string
 	if err := tx.QueryRow(ctx, `insert into transactions (reason, bet_id, note) values ('BET', $1::uuid, 'payout') returning id::text`, betID).Scan(&txID); err != nil {
-		return err
+		return nil, err
 	}
 
 	var distributed int64
@@ -202,7 +222,7 @@ func finalizeBetPayout(ctx context.Context, tx pgx.Tx, betID, winningOptionID st
 		// user default wallet
 		var wallet string
 		if err := tx.QueryRow(ctx, `select id::text from accounts where user_id = $1::uuid and is_default`, w.UserID).Scan(&wallet); err != nil {
-			return err
+			return nil, err
 		}
 		// ledger: escrow -> winner
 		if share > 0 {
@@ -211,11 +231,12 @@ func finalizeBetPayout(ctx context.Context, tx pgx.Tx, betID, winningOptionID st
 			  insert into ledger_entries (tx_id, account_id, delta)
 			  values ($1, $2, $4), ($1, $3, $5)
 			`, txID, escrowAcctID, wallet, outgoing, share); err != nil {
-				return err
+				return nil, err
 			}
+			payouts = append(payouts, userPayout{UserID: w.UserID, Amount: share})
 		}
 	}
-	return nil
+	return payouts, nil
 }
 
 func (h *BetResolveHandler) ensureModerator(ctx context.Context, uid string) (bool, error) {
@@ -246,10 +267,20 @@ func (h *BetResolveHandler) processResolution(ctx context.Context, uid, betID, o
 		return notes, err
 	}
 
-	moderatorName, betTitle, optionLabel, err := h.voteContext(ctx, tx, uid, betID, optionID)
+	conflict, err := h.hasVoteConflict(ctx, tx, betID)
 	if err != nil {
 		return notes, err
 	}
+	if conflict {
+		return notes, errAwaitingAdmin
+	}
+
+	moderatorName, betTitle, optionLabel, creatorID, err := h.voteContext(ctx, tx, uid, betID, optionID)
+	if err != nil {
+		return notes, err
+	}
+	notes.BetTitle = betTitle
+	notes.CreatorID = creatorID
 
 	if err := h.upsertResolutionVote(ctx, tx, betID, uid, optionID); err != nil {
 		return notes, err
@@ -261,7 +292,7 @@ func (h *BetResolveHandler) processResolution(ctx context.Context, uid, betID, o
 		return notes, err
 	}
 	if votes >= h.Quorum && agreed {
-		winOpt, err := h.finalizeConsensus(ctx, tx, betID)
+		winOpt, payouts, err := h.finalizeConsensus(ctx, tx, betID)
 		if err != nil {
 			return notes, err
 		}
@@ -269,6 +300,8 @@ func (h *BetResolveHandler) processResolution(ctx context.Context, uid, betID, o
 		if err := tx.QueryRow(ctx, `select label from bet_options where id = $1::uuid`, winOpt).Scan(&winningLabel); err != nil {
 			winningLabel = "unknown"
 		}
+		notes.WinningLabel = winningLabel
+		notes.Payouts = payouts
 		link := betLink(h.BaseURL, betID)
 		notes.CloseAdminMessage = fmt.Sprintf("Bet '%s' closed. Winner: %s", betTitle, winningLabel)
 		notes.CloseGroupMessage = fmt.Sprintf("Bet resolved: %s — Winner: %s\n%s", betTitle, winningLabel, link)
@@ -300,20 +333,36 @@ func (h *BetResolveHandler) ensureBetOpen(ctx context.Context, tx pgx.Tx, betID,
 	return nil
 }
 
-func (h *BetResolveHandler) voteContext(ctx context.Context, tx pgx.Tx, uid, betID, optionID string) (string, string, string, error) {
+func (h *BetResolveHandler) hasVoteConflict(ctx context.Context, tx pgx.Tx, betID string) (bool, error) {
+	var distinct int
+	if err := tx.QueryRow(ctx, `
+	  select count(distinct option_id)
+	  from bet_resolution_votes
+	  where bet_id = $1::uuid
+	`, betID).Scan(&distinct); err != nil {
+		if err == pgx.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return distinct > 1, nil
+}
+
+func (h *BetResolveHandler) voteContext(ctx context.Context, tx pgx.Tx, uid, betID, optionID string) (string, string, string, string, error) {
 	var moderatorName string
 	if err := tx.QueryRow(ctx, `select display_name from users where id = $1::uuid`, uid).Scan(&moderatorName); err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
 	var betTitle string
-	if err := tx.QueryRow(ctx, `select title from bets where id = $1::uuid`, betID).Scan(&betTitle); err != nil {
-		return "", "", "", err
+	var creatorID string
+	if err := tx.QueryRow(ctx, `select title, creator_user_id::text from bets where id = $1::uuid`, betID).Scan(&betTitle, &creatorID); err != nil {
+		return "", "", "", "", err
 	}
 	var optionLabel string
 	if err := tx.QueryRow(ctx, `select label from bet_options where id = $1::uuid`, optionID).Scan(&optionLabel); err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
-	return moderatorName, betTitle, optionLabel, nil
+	return moderatorName, betTitle, optionLabel, creatorID, nil
 }
 
 func (h *BetResolveHandler) upsertResolutionVote(ctx context.Context, tx pgx.Tx, betID, uid, optionID string) error {
@@ -342,15 +391,16 @@ func (h *BetResolveHandler) consensusStatus(ctx context.Context, tx pgx.Tx, betI
 	return votes, agreed, err
 }
 
-func (h *BetResolveHandler) finalizeConsensus(ctx context.Context, tx pgx.Tx, betID string) (string, error) {
+func (h *BetResolveHandler) finalizeConsensus(ctx context.Context, tx pgx.Tx, betID string) (string, []userPayout, error) {
 	winOpt, err := h.consensusWinningOption(ctx, tx, betID)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	if err := finalizeBetPayout(ctx, tx, betID, winOpt); err != nil {
-		return "", err
+	payouts, err := finalizeBetPayout(ctx, tx, betID, winOpt)
+	if err != nil {
+		return "", nil, err
 	}
-	return winOpt, nil
+	return winOpt, payouts, nil
 }
 
 func (h *BetResolveHandler) consensusWinningOption(ctx context.Context, tx pgx.Tx, betID string) (string, error) {

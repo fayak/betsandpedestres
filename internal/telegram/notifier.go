@@ -60,6 +60,20 @@ func (n *Notifier) NotifyGroup(ctx context.Context, msg string) {
 	sendMessage(ctx, nil, n.botToken, n.groupChatID, msg)
 }
 
+func (n *Notifier) NotifyUser(ctx context.Context, userID string, msg string) {
+	if n == nil || n.botToken == "" || userID == "" {
+		return
+	}
+	var chatID int64
+	if err := n.db.QueryRow(ctx, `select telegram_chat_id from users where id = $1::uuid`, userID).Scan(&chatID); err != nil {
+		return
+	}
+	if chatID == 0 {
+		return
+	}
+	sendMessage(ctx, nil, n.botToken, fmt.Sprintf("%d", chatID), msg)
+}
+
 var defaultHTTPClient = &http.Client{
 	Timeout: 5 * time.Second,
 }
