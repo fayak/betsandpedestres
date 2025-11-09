@@ -21,23 +21,20 @@ func nullIfEmpty(s string) any {
 	return s
 }
 
+type betRecord struct {
+	Title         string
+	CreatorName   string
+	Description   *string
+	ExternalURL   *string
+	Deadline      *time.Time
+	WinningOption *string
+	Status        string
+}
+
 func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r)
 
-	header := web.HeaderData{}
-	if uid != "" {
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-		defer cancel()
-		_ = h.DB.QueryRow(ctx, `
-			select u.username, u.display_name, coalesce(b.balance,0)
-			from users u
-			left join user_balances b on b.user_id = u.id
-			where u.id = $1
-		`, uid).Scan(&header.Username, &header.DisplayName, &header.Balance)
-		if header.Username != "" {
-			header.LoggedIn = true
-		}
-	}
+	header := h.buildHeader(r.Context(), uid)
 
 	betID := r.PathValue("id")
 	if betID == "" {
@@ -50,29 +47,9 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	modeResolve := r.URL.Query().Get("mode") == "resolve"
 
-	isMod := false
-	if header.LoggedIn {
-		ok, err := middleware.IsModerator(ctx, h.DB, uid)
-		if err == nil {
-			isMod = ok
-		} else {
-			slog.Warn("could not determine if is_mod", "error", err)
-		}
-	}
+	isMod := h.isModerator(ctx, header.LoggedIn, uid)
 
-	// fetch bet (add these columns)
-	var title, creatorName string
-	var desc, ext *string
-	var deadline *time.Time
-	var winning *string
-	var status string
-
-	err := h.DB.QueryRow(ctx, `
-  select b.title, u.display_name, b.description, b.external_url, b.deadline, b.resolution_option_id::text, b.status
-  from bets b
-  join users u on u.id = b.creator_user_id
-  where b.id = $1::uuid
-`, betID).Scan(&title, &creatorName, &desc, &ext, &deadline, &winning, &status)
+	bet, err := h.fetchBet(ctx, betID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			http.NotFound(w, r)
@@ -83,182 +60,42 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.DB.Query(ctx, `
-  select
-    bo.id::text,
-    bo.label,
-    coalesce( (select sum(w3.amount)::bigint from wagers w3 where w3.option_id = bo.id), 0 ) as stakes,
-    coalesce( array_agg(wl.display_name order by wl.amt desc)
-              filter (where wl.display_name is not null), '{}' ) as bettor_names,
-    coalesce( array_agg(wl.amt        order by wl.amt desc)
-              filter (where wl.display_name is not null), '{}' ) as bettor_amts
-  from bet_options bo
-  left join lateral (
-    select u.display_name, sum(w2.amount)::bigint as amt
-    from wagers w2
-    join users u on u.id = w2.user_id
-    where w2.option_id = bo.id
-    group by u.display_name
-    order by amt desc
-  ) wl on true
-  where bo.bet_id = $1::uuid
-  group by bo.id, bo.label
-  order by bo.position asc
-`, betID)
+	opts, total, err := h.fetchOptions(ctx, betID)
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
-
-	var opts []betOptionVM
-	for rows.Next() {
-		var o betOptionVM
-		var names []string
-		var amts []int64
-		if err := rows.Scan(&o.ID, &o.Label, &o.Stakes, &names, &amts); err != nil {
-			http.Error(w, "db error", http.StatusInternalServerError)
-			return
-		}
-		// zip bettors
-		n := len(names)
-		if len(amts) < n {
-			n = len(amts)
-		}
-		o.Bettors = make([]bettorVM, 0, n)
-		for i := 0; i < n; i++ {
-			o.Bettors = append(o.Bettors, bettorVM{Name: names[i], Amount: amts[i]})
-		}
-		opts = append(opts, o)
-	}
-	if err := rows.Err(); err != nil {
-		http.Error(w, "db rows error", http.StatusInternalServerError)
-		return
-	}
-
-	var votesTotal int
-	var myVote *string
-	if isMod {
-		_ = h.DB.QueryRow(ctx, `
-        select option_id::text
-        from bet_resolution_votes
-        where bet_id = $1::uuid and user_id = $2::uuid
-    `, betID, uid).Scan(&myVote)
-	}
-	_ = h.DB.QueryRow(ctx, `
-    select count(*)::int from bet_resolution_votes where bet_id = $1::uuid
-`, betID).Scan(&votesTotal)
+	myVote, votesTotal := h.voteInfo(ctx, betID, uid, isMod)
 
 	// ----- Determine status label -----
-	now := time.Now().UTC()
-	pastDeadline := (deadline != nil && deadline.Before(now) && (winning == nil) && status == "open")
-	resolutionInProgress := (votesTotal > 0 && winning == nil && status == "open")
-	alreadyClosed := (status != "open") || (winning != nil)
-
-	statusLabel := "Open"
-	switch {
-	case alreadyClosed:
-		statusLabel = "Closed"
-	case pastDeadline:
-		statusLabel = "Past the deadline"
-	case resolutionInProgress:
-		statusLabel = "Resolution in progress"
-	}
+	statusLabel, alreadyClosed, pastDeadline := determineStatus(bet.Deadline, bet.WinningOption, bet.Status, votesTotal)
 
 	// compute user's max stake
 	var maxStake int64
 	if header.LoggedIn {
-		_ = h.DB.QueryRow(ctx, `select coalesce(balance,0) from user_balances where user_id = $1`, header.Username /* wrong: needs user_id */).Scan(new(any))
-		// Use uid (user id), not username:
-		_ = h.DB.QueryRow(ctx, `select coalesce(balance,0) from user_balances where user_id = $1`, uid).Scan(&maxStake)
-	}
-
-	var total int64
-	for _, o := range opts {
-		total += o.Stakes
-	}
-	for i := range opts {
-		opts[i].Ratio = computeRatio(opts[i].Stakes, total-opts[i].Stakes)
+		maxStake = h.userBalance(ctx, uid)
 	}
 
 	canWager := header.LoggedIn && !modeResolve && !alreadyClosed && !pastDeadline
 	if canWager {
-		_ = h.DB.QueryRow(ctx, `select coalesce(balance,0) from user_balances where user_id = $1`, uid).Scan(&maxStake)
+		maxStake = h.userBalance(ctx, uid)
 	}
 
 	var winningLabel *string
-	if winning != nil {
-		var lbl string
-		if err := h.DB.QueryRow(ctx, `select label from bet_options where id = $1::uuid`, *winning).Scan(&lbl); err == nil {
-			winningLabel = &lbl
-		}
-	}
+	winningLabel = h.winningLabel(ctx, bet.WinningOption)
 
 	var payouts []payoutVM
-	if alreadyClosed && winning != nil {
-		// recompute actual intended payouts (matches finalize logic)
-		var escrowTotal int64
-		_ = h.DB.QueryRow(ctx, `
-        select coalesce(sum(amount),0)::bigint from wagers where bet_id = $1::uuid
-    `, betID).Scan(&escrowTotal)
-
-		var winTotal int64
-		_ = h.DB.QueryRow(ctx, `
-        select coalesce(sum(amount),0)::bigint from wagers where bet_id = $1::uuid and option_id = $2::uuid
-    `, betID, *winning).Scan(&winTotal)
-
-		if winTotal > 0 && escrowTotal > 0 {
-			rowsP, err := h.DB.Query(ctx, `
-            select u.display_name, sum(w.amount)::bigint
-            from wagers w
-            join users u on u.id = w.user_id
-            where w.bet_id = $1::uuid and w.option_id = $2::uuid
-            group by u.display_name
-            order by sum(w.amount) desc
-        `, betID, *winning)
-			if err == nil {
-				defer rowsP.Close()
-				// integer proportional split (same as finalize, last gets remainder)
-				var tmp []struct {
-					Name string
-					Amt  int64
-				}
-				for rowsP.Next() {
-					var n string
-					var a int64
-					if err := rowsP.Scan(&n, &a); err != nil {
-						break
-					}
-					tmp = append(tmp, struct {
-						Name string
-						Amt  int64
-					}{n, a})
-				}
-				if rowsP.Err() == nil && len(tmp) > 0 {
-					var distributed int64
-					for i, t := range tmp {
-						share := (escrowTotal * t.Amt) / winTotal
-						if i == len(tmp)-1 {
-							share = escrowTotal - distributed
-						} else {
-							distributed += share
-						}
-						payouts = append(payouts, payoutVM{Name: t.Name, Amount: share})
-					}
-				}
-			}
-		}
-	}
+	payouts = h.computePayouts(ctx, betID, bet.WinningOption, alreadyClosed)
 
 	content := betShowContent{
 		BetID:          betID,
-		Title:          title,
-		Description:    desc,
-		ExternalURL:    ext,
-		Deadline:       deadline,
+		Title:          bet.Title,
+		Description:    bet.Description,
+		ExternalURL:    bet.ExternalURL,
+		Deadline:       bet.Deadline,
 		Options:        opts,
 		TotalStakes:    total,
-		CreatorName:    creatorName,
+		CreatorName:    bet.CreatorName,
 		CanWager:       canWager,
 		MaxStake:       maxStake,
 		IdempotencyKey: randomHex(16),
@@ -270,7 +107,7 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		VotesTotal:      votesTotal,
 		Quorum:          h.Quorum,
 		MyVoteOptionID:  myVote,
-		WinningOptionID: winning,
+		WinningOptionID: bet.WinningOption,
 		WinningLabel:    winningLabel,
 		Payouts:         payouts,
 	}
@@ -320,4 +157,229 @@ func computeRatio(a, b int64) string {
 	}
 	g := gcd64(a, b)
 	return strconv.FormatInt(a/g, 10) + ":" + strconv.FormatInt(b/g, 10)
+}
+
+func (h *BetShowHandler) buildHeader(ctx context.Context, uid string) web.HeaderData {
+	header := web.HeaderData{}
+	if uid == "" {
+		return header
+	}
+	headerCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	err := h.DB.QueryRow(headerCtx, `
+			select u.username, u.display_name, coalesce(b.balance,0)
+			from users u
+			left join user_balances b on b.user_id = u.id
+			where u.id = $1
+		`, uid).Scan(&header.Username, &header.DisplayName, &header.Balance)
+	if err == nil && header.Username != "" {
+		header.LoggedIn = true
+	}
+	return header
+}
+
+func (h *BetShowHandler) isModerator(ctx context.Context, loggedIn bool, uid string) bool {
+	if !loggedIn {
+		return false
+	}
+	ok, err := middleware.IsModerator(ctx, h.DB, uid)
+	if err != nil {
+		slog.Warn("could not determine if is_mod", "error", err)
+		return false
+	}
+	return ok
+}
+
+func (h *BetShowHandler) fetchBet(ctx context.Context, betID string) (betRecord, error) {
+	var rec betRecord
+	err := h.DB.QueryRow(ctx, `
+  select b.title, u.display_name, b.description, b.external_url, b.deadline, b.resolution_option_id::text, b.status
+  from bets b
+  join users u on u.id = b.creator_user_id
+  where b.id = $1::uuid
+`, betID).Scan(&rec.Title, &rec.CreatorName, &rec.Description, &rec.ExternalURL, &rec.Deadline, &rec.WinningOption, &rec.Status)
+	return rec, err
+}
+
+func (h *BetShowHandler) fetchOptions(ctx context.Context, betID string) ([]betOptionVM, int64, error) {
+	rows, err := h.DB.Query(ctx, `
+  select
+    bo.id::text,
+    bo.label,
+    coalesce( (select sum(w3.amount)::bigint from wagers w3 where w3.option_id = bo.id), 0 ) as stakes,
+    coalesce( array_agg(wl.display_name order by wl.amt desc)
+              filter (where wl.display_name is not null), '{}' ) as bettor_names,
+    coalesce( array_agg(wl.amt        order by wl.amt desc)
+              filter (where wl.display_name is not null), '{}' ) as bettor_amts
+  from bet_options bo
+  left join lateral (
+    select u.display_name, sum(w2.amount)::bigint as amt
+    from wagers w2
+    join users u on u.id = w2.user_id
+    where w2.option_id = bo.id
+    group by u.display_name
+    order by amt desc
+  ) wl on true
+  where bo.bet_id = $1::uuid
+  group by bo.id, bo.label
+  order by bo.position asc
+`, betID)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var (
+		opts  []betOptionVM
+		total int64
+	)
+	for rows.Next() {
+		var (
+			o     betOptionVM
+			names []string
+			amts  []int64
+		)
+		if err := rows.Scan(&o.ID, &o.Label, &o.Stakes, &names, &amts); err != nil {
+			return nil, 0, err
+		}
+		n := len(names)
+		if len(amts) < n {
+			n = len(amts)
+		}
+		o.Bettors = make([]bettorVM, 0, n)
+		for i := 0; i < n; i++ {
+			o.Bettors = append(o.Bettors, bettorVM{Name: names[i], Amount: amts[i]})
+		}
+		opts = append(opts, o)
+		total += o.Stakes
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	for i := range opts {
+		opts[i].Ratio = computeRatio(opts[i].Stakes, total-opts[i].Stakes)
+	}
+	return opts, total, nil
+}
+
+func (h *BetShowHandler) voteInfo(ctx context.Context, betID, uid string, isMod bool) (*string, int) {
+	var myVote *string
+	if isMod {
+		_ = h.DB.QueryRow(ctx, `
+        select option_id::text
+        from bet_resolution_votes
+        where bet_id = $1::uuid and user_id = $2::uuid
+    `, betID, uid).Scan(&myVote)
+	}
+	var votesTotal int
+	_ = h.DB.QueryRow(ctx, `
+    select count(*)::int from bet_resolution_votes where bet_id = $1::uuid
+`, betID).Scan(&votesTotal)
+	return myVote, votesTotal
+}
+
+func determineStatus(deadline *time.Time, winning *string, status string, votesTotal int) (string, bool, bool) {
+	now := time.Now().UTC()
+	pastDeadline := (deadline != nil && deadline.Before(now) && (winning == nil) && status == "open")
+	resolutionInProgress := (votesTotal > 0 && winning == nil && status == "open")
+	alreadyClosed := (status != "open") || (winning != nil)
+
+	statusLabel := "Open"
+	switch {
+	case alreadyClosed:
+		statusLabel = "Closed"
+	case pastDeadline:
+		statusLabel = "Past the deadline"
+	case resolutionInProgress:
+		statusLabel = "Resolution in progress"
+	}
+	return statusLabel, alreadyClosed, pastDeadline
+}
+
+func (h *BetShowHandler) userBalance(ctx context.Context, uid string) int64 {
+	if uid == "" {
+		return 0
+	}
+	var maxStake int64
+	_ = h.DB.QueryRow(ctx, `select coalesce(balance,0) from user_balances where user_id = $1`, uid).Scan(&maxStake)
+	return maxStake
+}
+
+func (h *BetShowHandler) winningLabel(ctx context.Context, winning *string) *string {
+	if winning == nil {
+		return nil
+	}
+	var lbl string
+	if err := h.DB.QueryRow(ctx, `select label from bet_options where id = $1::uuid`, *winning).Scan(&lbl); err != nil {
+		return nil
+	}
+	return &lbl
+}
+
+func (h *BetShowHandler) computePayouts(ctx context.Context, betID string, winning *string, alreadyClosed bool) []payoutVM {
+	if !alreadyClosed || winning == nil {
+		return nil
+	}
+	var escrowTotal int64
+	_ = h.DB.QueryRow(ctx, `
+        select coalesce(sum(amount),0)::bigint from wagers where bet_id = $1::uuid
+    `, betID).Scan(&escrowTotal)
+
+	var winTotal int64
+	_ = h.DB.QueryRow(ctx, `
+        select coalesce(sum(amount),0)::bigint from wagers where bet_id = $1::uuid and option_id = $2::uuid
+    `, betID, *winning).Scan(&winTotal)
+
+	if winTotal == 0 || escrowTotal == 0 {
+		return nil
+	}
+
+	rowsP, err := h.DB.Query(ctx, `
+            select u.display_name, sum(w.amount)::bigint
+            from wagers w
+            join users u on u.id = w.user_id
+            where w.bet_id = $1::uuid and w.option_id = $2::uuid
+            group by u.display_name
+            order by sum(w.amount) desc
+        `, betID, *winning)
+	if err != nil {
+		return nil
+	}
+	defer rowsP.Close()
+
+	var (
+		tmp []struct {
+			Name string
+			Amt  int64
+		}
+		payouts []payoutVM
+	)
+	for rowsP.Next() {
+		var (
+			name string
+			amt  int64
+		)
+		if err := rowsP.Scan(&name, &amt); err != nil {
+			return nil
+		}
+		tmp = append(tmp, struct {
+			Name string
+			Amt  int64
+		}{name, amt})
+	}
+	if rowsP.Err() != nil || len(tmp) == 0 {
+		return nil
+	}
+
+	var distributed int64
+	for i, t := range tmp {
+		share := (escrowTotal * t.Amt) / winTotal
+		if i == len(tmp)-1 {
+			share = escrowTotal - distributed
+		} else {
+			distributed += share
+		}
+		payouts = append(payouts, payoutVM{Name: t.Name, Amount: share})
+	}
+	return payouts
 }

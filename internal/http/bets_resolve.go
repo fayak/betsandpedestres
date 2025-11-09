@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -16,6 +17,12 @@ type BetResolveHandler struct {
 	Quorum int
 }
 
+var (
+	errMissingFields    = errors.New("missing fields")
+	errInvalidBetOption = errors.New("invalid bet/option")
+	errBetNotOpen       = errors.New("bet not open")
+)
+
 func (h *BetResolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r)
 	if uid == "" {
@@ -26,8 +33,7 @@ func (h *BetResolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	// Must be moderator
-	isMod, err := middleware.IsModerator(ctx, h.DB, uid)
+	isMod, err := h.ensureModerator(ctx, uid)
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
@@ -37,94 +43,23 @@ func (h *BetResolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	betID := r.PathValue("id")
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
-		return
-	}
-	optionID := strings.TrimSpace(r.Form.Get("option_id"))
-	if betID == "" || optionID == "" {
-		http.Error(w, "missing fields", http.StatusBadRequest)
-		return
-	}
-
-	tx, err := h.DB.Begin(ctx)
+	betID, optionID, err := parseResolutionForm(r)
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
-		return
-	}
-	defer tx.Rollback(ctx)
-
-	// Validate: bet open and option belongs to bet
-	var open bool
-	err = tx.QueryRow(ctx, `
-	  select (b.status = 'open') and (b.deadline is null or b.deadline > now() at time zone 'utc')
-	  from bets b
-	  join bet_options o on o.bet_id = b.id
-	  where b.id = $1::uuid and o.id = $2::uuid
-	`, betID, optionID).Scan(&open)
-	if err != nil {
-		http.Error(w, "invalid bet/option", http.StatusBadRequest)
-		return
-	}
-	if !open {
-		http.Error(w, "bet not open", http.StatusConflict)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Upsert vote (so a moderator can change mind before consensus)
-	_, err = tx.Exec(ctx, `
-	  insert into bet_resolution_votes (bet_id, user_id, option_id)
-	  values ($1::uuid, $2::uuid, $3::uuid)
-	  on conflict (bet_id, user_id) do update set option_id = excluded.option_id, created_at = now()
-	`, betID, uid, optionID)
-	if err != nil {
-		http.Error(w, "vote error", http.StatusInternalServerError)
-		return
-	}
-
-	// Check for consensus:
-	// Rule: at least 2 moderator votes, and all votes cast for this bet agree on the same option.
-	// (Adjustable later to stricter policies.)
-	var votes int
-	var agreed bool
-	err = tx.QueryRow(ctx, `
-	  with v as (
-	    select option_id, count(*) as c
-	    from bet_resolution_votes
-	    where bet_id = $1::uuid
-	    group by option_id
-	  )
-	  select coalesce(sum(c),0) as total_votes,
-	         case when count(*) = 1 then true else false end as all_agree
-	  from v
-	`, betID).Scan(&votes, &agreed)
-	if err != nil {
-		http.Error(w, "consensus error", http.StatusInternalServerError)
-		return
-	}
-
-	if votes >= h.Quorum && agreed {
-		// find the agreed option
-		var winOpt string
-		if err := tx.QueryRow(ctx, `
-		  select option_id from bet_resolution_votes
-		  where bet_id = $1::uuid
-		  limit 1
-		`, betID).Scan(&winOpt); err != nil {
-			http.Error(w, "consensus error", http.StatusInternalServerError)
-			return
+	if err := h.processResolution(ctx, uid, betID, optionID); err != nil {
+		switch {
+		case errors.Is(err, errMissingFields):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case errors.Is(err, errInvalidBetOption):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case errors.Is(err, errBetNotOpen):
+			http.Error(w, err.Error(), http.StatusConflict)
+		default:
+			http.Error(w, "db error", http.StatusInternalServerError)
 		}
-
-		// finalize: set bet closed + resolution, and payout escrow proportionally
-		if err := finalizeBetPayout(ctx, tx, betID, winOpt); err != nil {
-			http.Error(w, "finalization error", http.StatusInternalServerError)
-			return
-		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		http.Error(w, "commit error", http.StatusInternalServerError)
 		return
 	}
 
@@ -253,4 +188,114 @@ func finalizeBetPayout(ctx context.Context, tx pgx.Tx, betID, winningOptionID st
 		}
 	}
 	return nil
+}
+
+func (h *BetResolveHandler) ensureModerator(ctx context.Context, uid string) (bool, error) {
+	return middleware.IsModerator(ctx, h.DB, uid)
+}
+
+func parseResolutionForm(r *http.Request) (string, string, error) {
+	betID := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		return "", "", err
+	}
+	optionID := strings.TrimSpace(r.Form.Get("option_id"))
+	if betID == "" || optionID == "" {
+		return "", "", errMissingFields
+	}
+	return betID, optionID, nil
+}
+
+func (h *BetResolveHandler) processResolution(ctx context.Context, uid, betID, optionID string) error {
+	tx, err := h.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if err := h.ensureBetOpen(ctx, tx, betID, optionID); err != nil {
+		return err
+	}
+	if err := h.upsertResolutionVote(ctx, tx, betID, uid, optionID); err != nil {
+		return err
+	}
+
+	votes, agreed, err := h.consensusStatus(ctx, tx, betID)
+	if err != nil {
+		return err
+	}
+	if votes >= h.Quorum && agreed {
+		if err := h.finalizeConsensus(ctx, tx, betID); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (h *BetResolveHandler) ensureBetOpen(ctx context.Context, tx pgx.Tx, betID, optionID string) error {
+	var open bool
+	err := tx.QueryRow(ctx, `
+	  select (b.status = 'open') and (b.deadline is null or b.deadline > now() at time zone 'utc')
+	  from bets b
+	  join bet_options o on o.bet_id = b.id
+	  where b.id = $1::uuid and o.id = $2::uuid
+	`, betID, optionID).Scan(&open)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errInvalidBetOption
+		}
+		return err
+	}
+	if !open {
+		return errBetNotOpen
+	}
+	return nil
+}
+
+func (h *BetResolveHandler) upsertResolutionVote(ctx context.Context, tx pgx.Tx, betID, uid, optionID string) error {
+	_, err := tx.Exec(ctx, `
+	  insert into bet_resolution_votes (bet_id, user_id, option_id)
+	  values ($1::uuid, $2::uuid, $3::uuid)
+	  on conflict (bet_id, user_id) do update set option_id = excluded.option_id, created_at = now()
+	`, betID, uid, optionID)
+	return err
+}
+
+func (h *BetResolveHandler) consensusStatus(ctx context.Context, tx pgx.Tx, betID string) (int, bool, error) {
+	var votes int
+	var agreed bool
+	err := tx.QueryRow(ctx, `
+	  with v as (
+	    select option_id, count(*) as c
+	    from bet_resolution_votes
+	    where bet_id = $1::uuid
+	    group by option_id
+	  )
+	  select coalesce(sum(c),0) as total_votes,
+	         case when count(*) = 1 then true else false end as all_agree
+	  from v
+	`, betID).Scan(&votes, &agreed)
+	return votes, agreed, err
+}
+
+func (h *BetResolveHandler) finalizeConsensus(ctx context.Context, tx pgx.Tx, betID string) error {
+	winOpt, err := h.consensusWinningOption(ctx, tx, betID)
+	if err != nil {
+		return err
+	}
+	return finalizeBetPayout(ctx, tx, betID, winOpt)
+}
+
+func (h *BetResolveHandler) consensusWinningOption(ctx context.Context, tx pgx.Tx, betID string) (string, error) {
+	var winOpt string
+	err := tx.QueryRow(ctx, `
+		  select option_id from bet_resolution_votes
+		  where bet_id = $1::uuid
+		  limit 1
+		`, betID).Scan(&winOpt)
+	return winOpt, err
 }

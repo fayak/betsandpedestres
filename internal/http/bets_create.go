@@ -3,6 +3,7 @@ package http
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -10,26 +11,14 @@ import (
 
 	"betsandpedestres/internal/http/middleware"
 	"betsandpedestres/internal/web"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func (h *BetNewHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r)
 
-	header := web.HeaderData{}
-	if uid != "" {
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-		defer cancel()
-		_ = h.DB.QueryRow(ctx, `
-			select u.username, u.display_name, coalesce(b.balance,0)
-			from users u
-			left join user_balances b on b.user_id = u.id
-			where u.id = $1
-		`, uid).Scan(&header.Username, &header.DisplayName, &header.Balance)
-		if header.Username != "" {
-			header.LoggedIn = true
-		}
-	}
+	header := h.buildHeader(r.Context(), uid)
 
 	page := web.Page[betNewContent]{
 		Header:  header,
@@ -49,6 +38,20 @@ type BetCreateHandler struct {
 	DB *pgxpool.Pool
 }
 
+var (
+	errMissingTitle    = errors.New("title is required")
+	errInvalidOptions  = errors.New("bet must have 2 to 10 distinct outcomes")
+	errInvalidDeadline = errors.New("invalid deadline")
+)
+
+type betForm struct {
+	Title       string
+	Description string
+	ExternalURL string
+	Deadline    *time.Time
+	Options     []string
+}
+
 func (h *BetCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.UserID(r)
 	if uid == "" {
@@ -60,86 +63,181 @@ func (h *BetCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	title := strings.TrimSpace(r.Form.Get("title"))
-	desc := strings.TrimSpace(r.Form.Get("description"))
-	extURL := strings.TrimSpace(r.Form.Get("external_url"))
-	deadlineUTC := strings.TrimSpace(r.Form.Get("deadline_utc"))
-	// tz := r.Form.Get("tz") // received for reference; not persisted for now
-
-	// Collect options (2–10, unique case-insensitive)
-	rawOpts := r.Form["option"]
-	opts := make([]string, 0, len(rawOpts))
-	seen := map[string]struct{}{}
-	for _, o := range rawOpts {
-		o = strings.TrimSpace(o)
-		if o == "" {
-			continue
+	form, err := parseBetForm(r)
+	if err != nil {
+		switch {
+		case errors.Is(err, errMissingTitle),
+			errors.Is(err, errInvalidOptions),
+			errors.Is(err, errInvalidDeadline):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			http.Error(w, "bad form", http.StatusBadRequest)
 		}
-		key := strings.ToLower(o)
-		if _, dup := seen[key]; dup {
-			continue
-		}
-		seen[key] = struct{}{}
-		opts = append(opts, o)
-	}
-
-	if title == "" {
-		http.Error(w, "title is required", http.StatusBadRequest)
 		return
-	}
-	if len(opts) < 2 || len(opts) > 10 {
-		http.Error(w, "bet must have 2 to 10 distinct outcomes", http.StatusBadRequest)
-		return
-	}
-
-	var dl *time.Time
-	if deadlineUTC != "" {
-		tm, err := time.Parse(time.RFC3339, deadlineUTC)
-		if err != nil {
-			http.Error(w, "invalid deadline", http.StatusBadRequest)
-			return
-		}
-		dl = &tm
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	tx, err := h.DB.Begin(ctx)
+	betID, err := h.createBet(ctx, uid, form)
 	if err != nil {
+		slog.Error("create bet error", "error", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
-		slog.Error("db error", "error", err)
-		return
-	}
-	defer tx.Rollback(ctx)
-
-	var betID string
-	err = tx.QueryRow(ctx, `
-		insert into bets (creator_user_id, title, description, external_url, deadline)
-		values ($1, $2, $3, nullif($4,''), $5)
-		returning id::text
-	`, uid, title, nullIfEmpty(desc), extURL, dl).Scan(&betID)
-	if err != nil {
-		http.Error(w, "insert bet error", http.StatusInternalServerError)
-		return
-	}
-
-	// Insert options with positions 1..N
-	for i, label := range opts {
-		if _, err := tx.Exec(ctx, `
-			insert into bet_options (bet_id, label, position)
-			values ($1, $2, $3)
-		`, betID, label, i+1); err != nil {
-			http.Error(w, "insert options error", http.StatusInternalServerError)
-			return
-		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		http.Error(w, "commit error", http.StatusInternalServerError)
 		return
 	}
 
 	// Redirect to bet page
 	http.Redirect(w, r, "/bets/"+betID, http.StatusSeeOther)
+}
+
+func (h *BetNewHandler) buildHeader(ctx context.Context, uid string) web.HeaderData {
+	header := web.HeaderData{}
+	if uid == "" {
+		return header
+	}
+	headerCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_ = h.DB.QueryRow(headerCtx, `
+			select u.username, u.display_name, coalesce(b.balance,0)
+			from users u
+			left join user_balances b on b.user_id = u.id
+			where u.id = $1
+		`, uid).Scan(&header.Username, &header.DisplayName, &header.Balance)
+	if header.Username != "" {
+		header.LoggedIn = true
+	}
+	return header
+}
+
+func parseBetForm(r *http.Request) (betForm, error) {
+	form := betForm{
+		Title:       strings.TrimSpace(r.Form.Get("title")),
+		Description: strings.TrimSpace(r.Form.Get("description")),
+		ExternalURL: strings.TrimSpace(r.Form.Get("external_url")),
+	}
+	if form.Title == "" {
+		return betForm{}, errMissingTitle
+	}
+
+	opts, err := collectOptions(r.Form["option"])
+	if err != nil {
+		return betForm{}, err
+	}
+	form.Options = opts
+
+	deadlineLocal := strings.TrimSpace(r.Form.Get("deadline_local"))
+	deadlineUTC := strings.TrimSpace(r.Form.Get("deadline_utc"))
+	tz := strings.TrimSpace(r.Form.Get("tz"))
+	form.Deadline, err = parseDeadline(deadlineLocal, deadlineUTC, tz)
+	if err != nil {
+		return betForm{}, err
+	}
+
+	return form, nil
+}
+
+func collectOptions(raw []string) ([]string, error) {
+	opts := make([]string, 0, len(raw))
+	seen := make(map[string]struct{}, len(raw))
+	for _, o := range raw {
+		o = strings.TrimSpace(o)
+		if o == "" {
+			continue
+		}
+		key := strings.ToLower(o)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		opts = append(opts, o)
+	}
+	if len(opts) < 2 || len(opts) > 10 {
+		return nil, errInvalidOptions
+	}
+	return opts, nil
+}
+
+func parseDeadline(localValue, fallbackUTC, tz string) (*time.Time, error) {
+	if localValue == "" && fallbackUTC == "" {
+		return nil, nil
+	}
+	if tz == "" {
+		tz = "Europe/Paris"
+	}
+	if localValue != "" {
+		if t, err := parseLocalDeadline(localValue, tz); err == nil {
+			utc := t.In(time.UTC)
+			return &utc, nil
+		}
+	}
+	if fallbackUTC != "" {
+		tm, err := time.Parse(time.RFC3339, fallbackUTC)
+		if err == nil {
+			utc := tm.In(time.UTC)
+			return &utc, nil
+		}
+	}
+	return nil, errInvalidDeadline
+}
+
+func parseLocalDeadline(value, tz string) (time.Time, error) {
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		loc, err = time.LoadLocation("Europe/Paris")
+		if err != nil {
+			return time.Time{}, err
+		}
+	}
+	layouts := []string{
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04",
+	}
+	for _, layout := range layouts {
+		if t, err := time.ParseInLocation(layout, value, loc); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, errInvalidDeadline
+}
+
+func (h *BetCreateHandler) createBet(ctx context.Context, uid string, form betForm) (string, error) {
+	tx, err := h.DB.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+
+	betID, err := h.insertBet(ctx, tx, uid, form)
+	if err != nil {
+		return "", err
+	}
+	if err := h.insertOptions(ctx, tx, betID, form.Options); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+	return betID, nil
+}
+
+func (h *BetCreateHandler) insertBet(ctx context.Context, tx pgx.Tx, uid string, form betForm) (string, error) {
+	var betID string
+	err := tx.QueryRow(ctx, `
+		insert into bets (creator_user_id, title, description, external_url, deadline)
+		values ($1, $2, $3, nullif($4,''), $5)
+		returning id::text
+	`, uid, form.Title, nullIfEmpty(form.Description), form.ExternalURL, form.Deadline).Scan(&betID)
+	return betID, err
+}
+
+func (h *BetCreateHandler) insertOptions(ctx context.Context, tx pgx.Tx, betID string, opts []string) error {
+	for i, label := range opts {
+		if _, err := tx.Exec(ctx, `
+			insert into bet_options (bet_id, label, position)
+			values ($1, $2, $3)
+		`, betID, label, i+1); err != nil {
+			return err
+		}
+	}
+	return nil
 }

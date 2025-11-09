@@ -106,8 +106,7 @@
       if(input.value){
         // value like "2025-03-10T12:30"
         const local = new Date(input.value); // interpreted as local
-        // to ISO UTC string without milliseconds
-        const iso = new Date(local.getTime() - local.getTimezoneOffset()*60000).toISOString().replace(/\.\d{3}Z$/, "Z");
+        const iso = local.toISOString().replace(/\.\d{3}Z$/, "Z");
         out.value = iso;
       } else {
         out.value = "";
@@ -123,4 +122,3 @@
     });
   </script>
 {{end}}
-
