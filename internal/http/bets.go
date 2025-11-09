@@ -183,10 +183,10 @@ func computeRatio(a, b int64) string {
 		return "—"
 	}
 	if a == 0 {
-		return "0:1"
+		return "0:" + strconv.FormatInt(b, 10)
 	}
 	if b == 0 {
-		return "1:0"
+		return strconv.FormatInt(a, 10) + ":0"
 	}
 	g := gcd64(a, b)
 	return strconv.FormatInt(a/g, 10) + ":" + strconv.FormatInt(b/g, 10)
