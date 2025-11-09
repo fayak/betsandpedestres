@@ -303,8 +303,12 @@ func (h *BetResolveHandler) processResolution(ctx context.Context, uid, betID, o
 		notes.WinningLabel = winningLabel
 		notes.Payouts = payouts
 		link := betLink(h.BaseURL, betID)
+		var totalPayout int64
+		for _, payout := range notes.Payouts {
+			totalPayout += payout.Amount
+		}
 		notes.CloseAdminMessage = fmt.Sprintf("Bet '%s' closed. Winner: %s", betTitle, winningLabel)
-		notes.CloseGroupMessage = fmt.Sprintf("Bet resolved: %s — Winner: %s\n%s", betTitle, winningLabel, link)
+		notes.CloseGroupMessage = fmt.Sprintf("Bet resolved: %s — Winner: %s\nTotal payout: 🦶 %d PiedPièces\n%s", betTitle, winningLabel, totalPayout, link)
 	}
 
 	if err := tx.Commit(ctx); err != nil {

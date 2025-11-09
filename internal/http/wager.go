@@ -58,20 +58,25 @@ func (h *BetWagerCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 
 	// 1) Validate bet + option belong together and bet open & not past deadline & no votes yet
 	var (
-		ok        bool
-		creatorID string
-		betTitle  string
+		ok          bool
+		creatorID   string
+		betTitle    string
+		optionLabel string
+		bettorName  string
 	)
 	err = tx.QueryRow(ctx, `
 		select (b.status = 'open')
 		       and (b.deadline is null or b.deadline > now() at time zone 'utc')
 		       and not exists (select 1 from bet_resolution_votes v where v.bet_id = b.id) as can_wager,
 		       b.creator_user_id::text,
-		       b.title
+		       b.title,
+		       o.label,
+		       u.display_name
 		from bet_options o
 		join bets b on b.id = o.bet_id
+		join users u on u.id = $3::uuid
 		where o.id = $1 and b.id = $2
-	`, optionID, betID).Scan(&ok, &creatorID, &betTitle)
+	`, optionID, betID, uid).Scan(&ok, &creatorID, &betTitle, &optionLabel, &bettorName)
 	if err != nil {
 		http.Error(w, "invalid bet or option", http.StatusBadRequest)
 		return
@@ -150,10 +155,10 @@ func (h *BetWagerCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 
 	if h.Notifier != nil {
 		link := betLink(h.BaseURL, betID)
-		groupMsg := fmt.Sprintf("New wager on \"%s\": 🦶 %d PiedPièces\n%s", betTitle, amount, link)
+		groupMsg := fmt.Sprintf("%s wagered 🦶 %d PiedPièces on \"%s\" (option: %s)\n%s", bettorName, amount, betTitle, optionLabel, link)
 		h.Notifier.NotifyGroup(r.Context(), groupMsg)
 		if creatorID != "" && creatorID != uid {
-			userMsg := fmt.Sprintf("Your bet \"%s\" received a new wager of 🦶 %d PiedPièces.\n%s", betTitle, amount, link)
+			userMsg := fmt.Sprintf("Your bet \"%s\" received a new wager from %s: 🦶 %d PiedPièces on %s.\n%s", betTitle, bettorName, amount, optionLabel, link)
 			h.Notifier.NotifyUser(r.Context(), creatorID, userMsg)
 		}
 	}
