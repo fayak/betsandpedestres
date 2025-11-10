@@ -164,10 +164,6 @@ func (h *BetWagerCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		link := betLink(h.BaseURL, betID)
 		groupMsg := formatWagerGroupMessage(bettorName, amount, betTitle, optionLabel, link, totalStakes)
 		h.Notifier.NotifyGroup(r.Context(), groupMsg)
-		if creatorID != "" && creatorID != uid {
-			userMsg := fmt.Sprintf("Your bet \"%s\" received a new wager from %s: 🦶 %d PiedPièces on %s.\n%s", betTitle, bettorName, amount, optionLabel, link)
-			h.Notifier.NotifyUser(r.Context(), creatorID, userMsg)
-		}
 	}
 
 	http.Redirect(w, r, "/bets/"+betID+"?note=placed", http.StatusSeeOther)

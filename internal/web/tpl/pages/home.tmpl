@@ -109,10 +109,10 @@
 
         <div style="display:flex; flex-direction:column; gap:6px;">
           {{range .Options}}
-            <div style="border:1px solid #202637; border-radius:6px; padding:8px; background:linear-gradient(90deg, rgba(192,132,252,0.18) {{.Percent}}%, rgba(13,15,24,0.85) {{.Percent}}%); display:flex; justify-content:space-between; align-items:center;">
-              <span>{{.Label}}</span>
+            <a href="/bets/{{$.ID}}" style="border:1px solid #202637; border-radius:6px; padding:8px; background:linear-gradient(90deg, rgba(192,132,252,0.18) {{.Percent}}%, rgba(13,15,24,0.85) {{.Percent}}%); display:flex; justify-content:space-between; align-items:center; color:inherit; text-decoration:none;">
+              <span style="color:var(--accent); font-weight:600;">{{.Label}}</span>
               <strong>{{.Percent}}%</strong>
-            </div>
+            </a>
           {{end}}
         </div>
 
