@@ -34,7 +34,10 @@ func NewMux(db *pgxpool.Pool, cfg *config.Config) (*http.ServeMux, error) {
 	mux.Handle("GET /bets/{id}", &BetShowHandler{DB: db, TPL: rend, Quorum: cfg.Moderation.Quorum})
 	mux.Handle("POST /bets/{id}/wagers", &BetWagerCreateHandler{DB: db, Notifier: notifier, BaseURL: cfg.BaseURL})
 	mux.Handle("POST /bets/{id}/resolve", &BetResolveHandler{DB: db, Quorum: cfg.Moderation.Quorum, Notifier: notifier, BaseURL: cfg.BaseURL})
-	mux.Handle("POST /register", &AccountRegisterHandler{DB: db, Notifier: notifier})
+	registerLimiter := middleware.NewRateLimiter(3, time.Minute)
+	loginLimiter := middleware.NewRateLimiter(10, time.Minute)
+
+	mux.Handle("POST /register", &AccountRegisterHandler{DB: db, Notifier: notifier, Limiter: registerLimiter})
 	profileHandler := &UserProfileHandler{DB: db, TPL: rend, Notifier: notifier}
 	mux.Handle("GET /profile", profileHandler)
 	mux.Handle("GET /profile/{username}", profileHandler)
@@ -52,7 +55,7 @@ func NewMux(db *pgxpool.Pool, cfg *config.Config) (*http.ServeMux, error) {
 		_, _ = w.Write([]byte("ready"))
 	})
 
-	ah := &AuthHandler{DB: db}
+	ah := &AuthHandler{DB: db, LoginLimiter: loginLimiter}
 	ah.Routes(mux)
 
 	return mux, nil

@@ -13,7 +13,8 @@ import (
 )
 
 type AuthHandler struct {
-	DB *pgxpool.Pool
+	DB           *pgxpool.Pool
+	LoginLimiter *middleware.RateLimiter
 }
 
 func (h *AuthHandler) Routes(mux *http.ServeMux) {
@@ -35,6 +36,12 @@ type meResp struct {
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	if h.LoginLimiter != nil {
+		if !h.LoginLimiter.Allow(middleware.ClientIP(r)) {
+			http.Error(w, "too many attempts", http.StatusTooManyRequests)
+			return
+		}
+	}
 	var req loginReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)

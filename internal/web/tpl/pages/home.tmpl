@@ -20,6 +20,10 @@
         <div class="pill" style="background:#3a1d1d; border:1px solid #a33; margin-bottom:12px;">
           Please fill out every field.
         </div>
+      {{else if eq .Content.SignupStatus "rate"}}
+        <div class="pill" style="background:#3a1d1d; border:1px solid #a33; margin-bottom:12px;">
+          Too many signup attempts. Please wait a bit and try again.
+        </div>
       {{else if eq .Content.SignupStatus "error"}}
         <div class="pill" style="background:#3a1d1d; border:1px solid #a33; margin-bottom:12px;">
           Something went wrong. Try again later.

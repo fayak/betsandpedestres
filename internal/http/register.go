@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"betsandpedestres/internal/auth"
+	"betsandpedestres/internal/http/middleware"
 	"betsandpedestres/internal/notify"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,9 +17,16 @@ import (
 type AccountRegisterHandler struct {
 	DB       *pgxpool.Pool
 	Notifier notify.Notifier
+	Limiter  *middleware.RateLimiter
 }
 
 func (h *AccountRegisterHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.Limiter != nil {
+		if !h.Limiter.Allow(middleware.ClientIP(r)) {
+			http.Redirect(w, r, "/?signup=rate", http.StatusSeeOther)
+			return
+		}
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Redirect(w, r, "/?signup=error", http.StatusSeeOther)
 		return
