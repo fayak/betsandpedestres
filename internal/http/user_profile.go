@@ -79,6 +79,7 @@ type profileContent struct {
 	RoleUpdateStatus     string
 	ShowTelegram         bool
 	PasswordUpdateStatus string
+	DisplayUpdateStatus  string
 }
 
 func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +107,18 @@ func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodPost {
 		if pathUsername == "" {
-			h.handlePasswordChange(w, r, uid)
+			if err := r.ParseForm(); err != nil {
+				http.Redirect(w, r, "/profile?pwd=error", http.StatusSeeOther)
+				return
+			}
+			switch strings.TrimSpace(r.Form.Get("action")) {
+			case "password":
+				h.handlePasswordChange(w, r, uid)
+			case "display":
+				h.handleDisplayChange(w, r, uid)
+			default:
+				http.Redirect(w, r, "/profile?pwd=error", http.StatusSeeOther)
+			}
 			return
 		}
 		if role != middleware.RoleAdmin {
@@ -203,6 +215,7 @@ func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		CanEditRoles:         role == middleware.RoleAdmin,
 		ShowTelegram:         targetUsername == header.Username,
 		PasswordUpdateStatus: r.URL.Query().Get("pwd"),
+		DisplayUpdateStatus:  r.URL.Query().Get("display"),
 	}
 
 	page := web.Page[profileContent]{Header: header, Content: content}
@@ -348,10 +361,6 @@ func (h *UserProfileHandler) fetchTransactions(ctx context.Context, userID strin
 }
 
 func (h *UserProfileHandler) handlePasswordChange(w http.ResponseWriter, r *http.Request, uid string) {
-	if err := r.ParseForm(); err != nil {
-		http.Redirect(w, r, "/profile?pwd=error", http.StatusSeeOther)
-		return
-	}
 	current := r.Form.Get("current_password")
 	newPass := strings.TrimSpace(r.Form.Get("new_password"))
 	confirm := strings.TrimSpace(r.Form.Get("confirm_password"))
@@ -393,6 +402,27 @@ func (h *UserProfileHandler) handlePasswordChange(w http.ResponseWriter, r *http
 	}
 
 	http.Redirect(w, r, "/profile?pwd=updated", http.StatusSeeOther)
+}
+
+func (h *UserProfileHandler) handleDisplayChange(w http.ResponseWriter, r *http.Request, uid string) {
+	newName := strings.TrimSpace(r.Form.Get("display_name"))
+	if newName == "" {
+		http.Redirect(w, r, "/profile?display=missing", http.StatusSeeOther)
+		return
+	}
+	if len([]rune(newName)) > 64 {
+		runes := []rune(newName)
+		newName = string(runes[:64])
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if _, err := h.DB.Exec(ctx, `update users set display_name = $2 where id = $1::uuid`, uid, newName); err != nil {
+		http.Redirect(w, r, "/profile?display=error", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/profile?display=updated", http.StatusSeeOther)
 }
 
 func (h *UserProfileHandler) fetchUserOptions(ctx context.Context) ([]profileUserOption, error) {

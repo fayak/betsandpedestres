@@ -3,6 +3,7 @@ package http
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"betsandpedestres/internal/config"
@@ -48,7 +49,14 @@ func NewMux(db *pgxpool.Pool, cfg *config.Config) (*http.ServeMux, error) {
 	recoverHandler := &PasswordRecoveryHandler{DB: db, TPL: rend, Notifier: notifier}
 	mux.Handle("GET /recover", recoverHandler)
 	mux.Handle("POST /recover", recoverHandler)
-	mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(resources.FS))))
+	assetFS := http.StripPrefix("/assets/", http.FileServer(http.FS(resources.FS)))
+	mux.Handle("GET /assets/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/gambling.m4a") && middleware.UserID(r) == "" {
+			http.NotFound(w, r)
+			return
+		}
+		assetFS.ServeHTTP(w, r)
+	}))
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

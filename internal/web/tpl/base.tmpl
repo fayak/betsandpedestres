@@ -68,7 +68,7 @@
   </style>
   <link rel="icon" type="image/png" href="/assets/favicon.png">
 </head>
-<body>
+<body data-logged-in="{{if .Header.LoggedIn}}1{{else}}0{{end}}">
   {{template "header" .}}
   <main>
     {{block "content" .}}{{end}}
@@ -145,6 +145,7 @@
     const timeKey = 'bapMusicTime';
     let pref = localStorage.getItem(prefKey) === 'on' ? 'on' : 'off';
 
+    if(!document.body.dataset.loggedIn){ return; }
     document.querySelectorAll('[data-music-root]').forEach(root => {
       const audio = root.querySelector('audio[data-music-audio]');
       const btn = root.querySelector('[data-music-toggle]');

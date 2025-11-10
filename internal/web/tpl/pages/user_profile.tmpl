@@ -93,6 +93,24 @@
     </div>
     {{if not .Content.ViewingOther}}
       <div class="accent-panel soft" style="border-radius:10px; border:1px solid #1f2636; padding:16px;">
+        <h2 style="margin-top:0; font-size:1rem; letter-spacing:.05em; text-transform:uppercase; color:var(--accent);">Display name</h2>
+        {{if eq .Content.DisplayUpdateStatus "updated"}}
+          <div class="pill strong" style="margin-bottom:10px;">Display name updated.</div>
+        {{else if eq .Content.DisplayUpdateStatus "missing"}}
+          <div class="pill" style="margin-bottom:10px; border-color:#f97316; color:#fdba74;">Display name cannot be empty.</div>
+        {{else if eq .Content.DisplayUpdateStatus "error"}}
+          <div class="pill" style="margin-bottom:10px; border-color:#f87171; color:#fca5a5;">Could not update display name.</div>
+        {{end}}
+        <form method="POST" action="/profile" data-no-pjax class="row" style="flex-direction:column; gap:10px; align-items:flex-start;">
+          <input type="hidden" name="action" value="display">
+          <label style="width:100%;">
+            <div>Display name</div>
+            <input name="display_name" required maxlength="64" value="{{.Content.Target.DisplayName}}" style="width:100%;">
+          </label>
+          <button class="primary" style="border-radius:8px;">Update display name</button>
+        </form>
+      </div>
+      <div class="accent-panel soft" style="border-radius:10px; border:1px solid #1f2636; padding:16px;">
         <h2 style="margin-top:0; font-size:1rem; letter-spacing:.05em; text-transform:uppercase; color:var(--accent);">Change password</h2>
         {{if eq .Content.PasswordUpdateStatus "updated"}}
           <div class="pill strong" style="margin-bottom:10px;">Password updated.</div>
@@ -108,6 +126,7 @@
           <div class="pill" style="margin-bottom:10px; border-color:#f87171; color:#fca5a5;">Could not update password. Try again later.</div>
         {{end}}
         <form method="POST" action="/profile" data-no-pjax class="row" style="flex-direction:column; gap:10px; align-items:flex-start;">
+          <input type="hidden" name="action" value="password">
           <label style="width:100%;">
             <div>Current password</div>
             <input type="password" name="current_password" required autocomplete="current-password" style="width:100%;">
