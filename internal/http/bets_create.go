@@ -177,6 +177,8 @@ func parseDeadline(localValue, fallbackUTC, tz string) (*time.Time, error) {
 		if t, err := parseLocalDeadline(localValue, tz); err == nil {
 			utc := t.In(time.UTC)
 			return &utc, nil
+		} else {
+			slog.Warn("Invalid deadline submitted", "deadline", localValue, "tz", tz, "error", err)
 		}
 	}
 	if fallbackUTC != "" {
@@ -185,6 +187,7 @@ func parseDeadline(localValue, fallbackUTC, tz string) (*time.Time, error) {
 			utc := tm.In(time.UTC)
 			return &utc, nil
 		}
+		slog.Warn("Invalid fallbackUTC", "fallbackutc", fallbackUTC, "tz", tz, "error", err)
 	}
 	return nil, errInvalidDeadline
 }
