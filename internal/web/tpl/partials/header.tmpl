@@ -1,7 +1,12 @@
 {{define "header"}}
 <header>
-  <div class="brand"><a href="/">Bets And Pedestres <span class="muted">/ alpha</span></a></div>
+  <div class="brand"><a href="/">Bets And Pedestres <span class="muted">/ {{if .Header.Version}}{{.Header.Version}}{{else}}DEVBUILD{{end}}</span></a></div>
   <div class="right">
+    <div class="music-panel" data-music-root>
+      <audio data-music-audio preload="auto" src="/assets/gambling.m4a"></audio>
+      <span class="muted">Theme music</span>
+      <button type="button" class="music-toggle off" data-music-toggle>🔇 Music off</button>
+    </div>
     {{if .Header.LoggedIn}}
       <a class="pill" href="/hof">PiedPièces Hall of Fame</a>
       <a class="pill" href="/transactions">Ledger</a>

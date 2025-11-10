@@ -101,9 +101,9 @@
     {{range .Content.Rows}}
       {{- $bet := . -}}
       <div class="accent-panel card-strip" style="border-radius:10px; border:1px solid #1c2231; padding:16px; background:linear-gradient(135deg,rgba(13,16,26,0.95),rgba(11,13,20,0.92)); display:flex; flex-direction:column; gap:10px;">
-        <div class="row" style="justify-content:space-between; align-items:flex-start; gap:12px;">
-          <div>
-            <h3 style="margin:0"><a href="/bets/{{.ID}}">{{.Title}}</a></h3>
+      <div class="row" style="justify-content:space-between; align-items:flex-start; gap:12px;">
+        <div>
+          <h3 style="margin:0"><a href="/bets/{{.ID}}">{{.Title}}</a></h3>
           </div>
           <span class="pill strong" style="background:{{.StatusColor}}; color:#fff; border:none; font-size:0.85em;">{{.StatusLabel}}</span>
         </div>

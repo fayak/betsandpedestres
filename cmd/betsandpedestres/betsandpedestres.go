@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -67,6 +68,8 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	apphttp.SetVersion(readVersionFile("VERSION"))
 
 	mux, err := apphttp.NewMux(pool, cfg)
 	if err != nil {
@@ -137,4 +140,16 @@ func main() {
 
 	pool.Close()
 	slog.Info("pool.closed")
+}
+
+func readVersionFile(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "DEVBUILD"
+	}
+	ver := strings.TrimSpace(string(data))
+	if ver == "" {
+		return "DEVBUILD"
+	}
+	return ver
 }

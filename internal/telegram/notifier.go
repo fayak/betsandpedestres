@@ -123,5 +123,12 @@ func sendMessage(ctx context.Context, client *http.Client, token, chatID, msg st
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		slog.Warn("telegram.send.status", "status", resp.Status)
+		var result struct {
+			OK          bool   `json:"ok"`
+			Description string `json:"description"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && result.Description != "" {
+			slog.Warn("telegram.send.detail", "description", result.Description)
+		}
 	}
 }

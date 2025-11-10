@@ -51,6 +51,9 @@
     .filter-bar label{min-width:160px}
     .bet-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));}
     @media (min-width:1400px){.bet-grid{grid-template-columns:repeat(4,minmax(0,1fr));}}
+    .music-panel{display:flex;align-items:center;gap:10px;padding:6px 10px;border:1px dashed rgba(255,255,255,0.15);border-radius:10px;background:rgba(12,14,20,0.7)}
+    .music-toggle{cursor:pointer;border:1px solid var(--stroke);border-radius:8px;background:rgba(114,224,168,0.15);color:var(--fg);padding:6px 14px;font-weight:600;letter-spacing:.04em}
+    .music-toggle.off{background:rgba(128,128,128,0.2);color:var(--muted)}
     a{color:var(--accent-2);text-decoration:none}
     a[class=pill]{color:var(--accent);}
     a:hover{color:#f5c3ff}
@@ -98,6 +101,94 @@
     });
   }
   document.addEventListener('DOMContentLoaded', fmtAllDates);
+
+  // Music toggles
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const prefKey = 'bapMusic';
+    const timeKey = 'bapMusicTime';
+    let pref = localStorage.getItem(prefKey) === 'on' ? 'on' : 'off';
+
+    document.querySelectorAll('[data-music-root]').forEach(root => {
+      const audio = root.querySelector('audio[data-music-audio]');
+      const btn = root.querySelector('[data-music-toggle]');
+      if(!audio || !btn){ return; }
+
+      audio.loop = true;
+      audio.volume = 0.4;
+
+      let pendingTime = parseFloat(localStorage.getItem(timeKey));
+      if(!Number.isFinite(pendingTime) || pendingTime < 0){ pendingTime = 0; }
+
+      const applySavedTime = () => {
+        if(pendingTime > 0 && Number.isFinite(audio.duration) && audio.duration > 0){
+          audio.currentTime = pendingTime % audio.duration;
+          pendingTime = 0;
+        }
+      };
+      audio.addEventListener('loadedmetadata', applySavedTime);
+      applySavedTime();
+
+      let lastPersist = 0;
+      const persistTime = () => {
+        if(pref !== 'on'){ return; }
+        const now = Date.now();
+        if(now - lastPersist < 1500){ return; }
+        lastPersist = now;
+        localStorage.setItem(timeKey, String(audio.currentTime || 0));
+      };
+      audio.addEventListener('timeupdate', persistTime);
+      window.addEventListener('beforeunload', () => {
+        if(pref === 'on') {
+          localStorage.setItem(timeKey, String(audio.currentTime || 0));
+        }
+      });
+
+      const attachResume = () => {
+        const resume = () => {
+          document.removeEventListener('pointerdown', resume);
+          document.removeEventListener('keydown', resume);
+          requestPlay();
+        };
+        document.addEventListener('pointerdown', resume, {once:true});
+        document.addEventListener('keydown', resume, {once:true});
+      };
+
+      const requestPlay = () => {
+        if(pref !== 'on') {
+          audio.pause();
+          return;
+        }
+        applySavedTime();
+        const playPromise = audio.play();
+        if(playPromise && playPromise.catch){
+          playPromise.catch(()=>{
+            attachResume();
+          });
+        }
+      };
+
+      const updateUI = () => {
+        if(pref === 'on') {
+          btn.textContent = '🔊 Music on';
+          btn.classList.remove('off');
+          requestPlay();
+        } else {
+          btn.textContent = '🔇 Music off';
+          btn.classList.add('off');
+          audio.pause();
+          localStorage.setItem(timeKey, String(audio.currentTime || 0));
+        }
+      };
+
+      btn.addEventListener('click', ()=>{
+        pref = pref === 'on' ? 'off' : 'on';
+        localStorage.setItem(prefKey, pref);
+        updateUI();
+      });
+
+      updateUI();
+    });
+  });
   </script>
 
 </body>

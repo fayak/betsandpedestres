@@ -6,6 +6,7 @@ type HeaderData struct {
 	DisplayName string
 	Username    string
 	Balance     int64
+	Version     string
 }
 
 // Page wraps shared Header + page-specific Content.

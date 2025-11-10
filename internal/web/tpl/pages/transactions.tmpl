@@ -82,8 +82,8 @@
     </div>
 
     <nav class="ledger-nav">
-      {{if .Content.HasPrev}}<a href="{{.PrevURL}}">← Prev</a>{{end}}
-      {{if .Content.HasNext}}<a href="{{.NextURL}}">Next →</a>{{end}}
+      {{if .Content.HasPrev}}<a href="{{.Content.PrevURL}}">← Prev</a>{{end}}
+      {{if .Content.HasNext}}<a href="{{.Content.NextURL}}">Next →</a>{{end}}
     </nav>
 
     <p class="muted" style="margin-top:12px">
