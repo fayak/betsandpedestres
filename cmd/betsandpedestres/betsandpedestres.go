@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -143,13 +144,20 @@ func main() {
 }
 
 func readVersionFile(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "DEVBUILD"
+	tryPaths := []string{path}
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		tryPaths = append(tryPaths, filepath.Join(dir, path))
 	}
-	ver := strings.TrimSpace(string(data))
-	if ver == "" {
-		return "DEVBUILD"
+	for _, p := range tryPaths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		ver := strings.TrimSpace(string(data))
+		if ver != "" {
+			return ver
+		}
 	}
-	return ver
+	return "DEVBUILD"
 }
