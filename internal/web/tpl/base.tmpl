@@ -78,29 +78,42 @@
     const f = document.getElementById('loginForm');
     const body = JSON.stringify({username: f.username.value, password: f.password.value});
     const res = await fetch('/api/v1/auth/login', {method:'POST', headers:{'Content-Type':'application/json'}, body});
-    if(res.ok){ location.reload(); } else { alert('Login failed'); }
+    if(res.ok){ window.location.reload(); } else { alert('Login failed'); }
   }
   async function doLogout(){
     const res = await fetch('/api/v1/auth/logout', {method:'POST'});
-    if(res.ok){ location.reload(); } else { alert('Logout failed'); }
+    if(res.ok){ window.location.href = '/'; } else { alert('Logout failed'); }
   }
   </script>
     <script>
   // Set timezone label(s)
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Paris";
-  document.querySelectorAll('.js-tz').forEach(el => el.textContent = tz);
+
+  function applyTimezoneLabels(root){
+    const scope = root || document;
+    scope.querySelectorAll('.js-tz').forEach(el => el.textContent = tz);
+  }
 
   // Format all .dt elements to local time without milliseconds, with TZ short name.
-  function fmtAllDates(){
+  function fmtAllDates(root){
+    const scope = root || document;
     const opts = { year:'numeric', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZoneName:'short' };
-    document.querySelectorAll('.dt').forEach(el => {
+    scope.querySelectorAll('.dt').forEach(el => {
       const iso = el.getAttribute('data-iso');
       if(!iso) return;
       const d = new Date(iso);
       el.textContent = d.toLocaleString(undefined, opts);
     });
   }
-  document.addEventListener('DOMContentLoaded', fmtAllDates);
+  document.addEventListener('DOMContentLoaded', () => {
+    fmtAllDates();
+    applyTimezoneLabels();
+  });
+
+  function refreshDynamicContent(root){
+    applyTimezoneLabels(root);
+    fmtAllDates(root);
+  }
 
   // Music toggles
   document.addEventListener('DOMContentLoaded', ()=>{
@@ -187,6 +200,76 @@
       });
 
       updateUI();
+    });
+  });
+
+  // PJAX navigation
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const mainSelector = 'main';
+    let mainEl = document.querySelector(mainSelector);
+    if(!mainEl) return;
+
+    async function fetchPage(url, push=true){
+      try{
+        const res = await fetch(url, {headers:{'X-PJAX':'true'}});
+        if(!res.ok){
+          window.location.href = url;
+          return;
+        }
+        const html = await res.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const newMain = doc.querySelector(mainSelector);
+        if(!newMain){
+          window.location.href = url;
+          return;
+        }
+        document.title = doc.title;
+        mainEl.replaceWith(newMain);
+        mainEl = newMain;
+        executeInlineScripts(newMain);
+        refreshDynamicContent(newMain);
+        if(push){
+          history.pushState({}, '', url);
+        }
+        window.scrollTo({top:0, behavior:'auto'});
+      }catch(err){
+        console.error('PJAX fetch failed', err);
+        window.location.href = url;
+      }
+    }
+
+    function executeInlineScripts(scope){
+      scope.querySelectorAll('script').forEach(script => {
+        const s = document.createElement('script');
+        if(script.src){
+          s.src = script.src;
+          s.async = false;
+          s.addEventListener('load', () => s.remove());
+          s.addEventListener('error', () => s.remove());
+        }else{
+          s.textContent = script.textContent;
+          requestAnimationFrame(() => s.remove());
+        }
+        document.body.appendChild(s);
+      });
+    }
+
+    document.body.addEventListener('click', (ev)=>{
+      const link = ev.target.closest('a');
+      if(!link) return;
+      if(link.matches('[data-no-pjax]')) return;
+      if(link.origin !== window.location.origin) return;
+      if(link.target && link.target !== '_self') return;
+      const href = link.getAttribute('href');
+      if(!href || href.startsWith('#')) return;
+      if(link.hasAttribute('download')) return;
+      ev.preventDefault();
+      fetchPage(link.href);
+    });
+
+    window.addEventListener('popstate', ()=>{
+      fetchPage(window.location.href, false);
     });
   });
   </script>
