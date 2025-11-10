@@ -103,7 +103,7 @@
     </div>
   {{end}}
 
-  <form method="POST" action="/bets/{{.Content.BetID}}/resolve" style="display:grid; gap:16px; max-width:860px; margin-top:12px">
+  <form method="POST" action="/bets/{{.Content.BetID}}/resolve" style="display:grid; gap:24px; margin-top:12px">
     {{if .Content.AdminOverrideMode}}
       <input type="hidden" name="admin_override" value="1">
     {{end}}
@@ -111,7 +111,7 @@
       {{range .Content.Options}}
         <label class="opt-card bet-option-card" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#b91c1c{{end}}; padding:12px; cursor:pointer; background:linear-gradient(120deg, rgba(54,79,132,0.45) {{.Percent}}%, rgba(15,17,23,0.85) {{.Percent}}%);">
           <div class="opt-main">
-            <div style="font-weight:600; color:var(--accent);">{{.Label}}</div>
+            <div style="font-weight:600; color:var(--accent); margin-bottom: 12px;">{{.Label}}</div>
             <div class="row" style="gap:10px; flex-wrap:wrap;">
               <span class="pill">🦶 Stakes: {{.Stakes}} PiedPièces</span>
               <span class="pill">Ratio: {{.Ratio}}</span>
@@ -162,13 +162,13 @@
       {{range .Content.Options}}
         <label class="opt-card bet-option-card{{if or (not $.Content.CanWager) $.Content.AlreadyClosed}} disabled{{end}}" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#2a2e39{{end}}; padding:12px; cursor:pointer; background:linear-gradient(120deg, rgba(44,68,112,0.45) {{.Percent}}%, rgba(15,17,23,0.82) {{.Percent}}%);">
           <div class="opt-main">
-            <div style="font-weight:600; color:var(--accent);">{{.Label}}</div>
+            <div style="font-weight:600; color:var(--accent); margin-bottom: 12px;">{{.Label}}</div>
             <div class="row" style="gap:10px; flex-wrap:wrap;">
               <span class="pill">🦶 Stakes: {{.Stakes}} PiedPièces</span>
               <span class="pill">Ratio: {{.Ratio}}</span>
             </div>
             {{if .Bettors}}
-              <div>
+              <div style="margin-top: 10px;">
                 <div class="muted" style="margin-bottom:4px">Bettors (by amount):</div>
                 <ul style="margin:0; padding-left:18px;">
                   {{range .Bettors}}
@@ -177,7 +177,7 @@
                 </ul>
               </div>
             {{else}}
-              <div class="muted">No wagers yet.</div>
+              <div style="margin-top: 10px;" class="muted">No wagers yet.</div>
             {{end}}
           </div>
           <div class="opt-radio-wrap">
