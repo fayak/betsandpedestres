@@ -115,6 +115,7 @@ func (h *BetResolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	link := betLink(h.BaseURL, betID)
 	if notes.CloseGroupMessage != "" {
 		h.Notifier.NotifyGroup(ctx, notes.CloseGroupMessage)
+		h.Notifier.NotifySubscribers(ctx, notes.CloseGroupMessage)
 	}
 	if notes.CreatorID != "" && notes.WinningLabel != "" {
 		h.Notifier.NotifyUser(ctx, notes.CreatorID, fmt.Sprintf("Your bet \"%s\" resolved. Winner: %s\n%s", notes.BetTitle, notes.WinningLabel, link))

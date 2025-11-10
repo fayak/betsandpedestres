@@ -29,6 +29,7 @@ type profileUserInfo struct {
 	Role           string
 	JoinedAt       time.Time
 	TelegramChatID *int64
+	TelegramNotify bool
 }
 
 type profileWallet struct {
@@ -80,6 +81,7 @@ type profileContent struct {
 	ShowTelegram         bool
 	PasswordUpdateStatus string
 	DisplayUpdateStatus  string
+	NotifyUpdateStatus   string
 }
 
 func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -116,6 +118,8 @@ func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				h.handlePasswordChange(w, r, uid)
 			case "display":
 				h.handleDisplayChange(w, r, uid)
+			case "notify":
+				h.handleNotifyToggle(w, r, uid)
 			default:
 				http.Redirect(w, r, "/profile?pwd=error", http.StatusSeeOther)
 			}
@@ -216,6 +220,7 @@ func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ShowTelegram:         targetUsername == header.Username,
 		PasswordUpdateStatus: r.URL.Query().Get("pwd"),
 		DisplayUpdateStatus:  r.URL.Query().Get("display"),
+		NotifyUpdateStatus:   r.URL.Query().Get("notify"),
 	}
 
 	page := web.Page[profileContent]{Header: header, Content: content}
@@ -232,10 +237,10 @@ func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *UserProfileHandler) fetchUserInfo(ctx context.Context, username string) (profileUserInfo, error) {
 	var info profileUserInfo
 	err := h.DB.QueryRow(ctx, `
-		select id::text, username, display_name, role, created_at, telegram_chat_id
+		select id::text, username, display_name, role, created_at, telegram_chat_id, telegram_notify
 		from users
 		where username = $1
-	`, username).Scan(&info.ID, &info.Username, &info.DisplayName, &info.Role, &info.JoinedAt, &info.TelegramChatID)
+	`, username).Scan(&info.ID, &info.Username, &info.DisplayName, &info.Role, &info.JoinedAt, &info.TelegramChatID, &info.TelegramNotify)
 	return info, err
 }
 
@@ -425,6 +430,26 @@ func (h *UserProfileHandler) handleDisplayChange(w http.ResponseWriter, r *http.
 	http.Redirect(w, r, "/profile?display=updated", http.StatusSeeOther)
 }
 
+func (h *UserProfileHandler) handleNotifyToggle(w http.ResponseWriter, r *http.Request, uid string) {
+	enabled := r.Form.Get("enabled") == "on"
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	var chatID *int64
+	if err := h.DB.QueryRow(ctx, `select telegram_chat_id from users where id = $1::uuid`, uid).Scan(&chatID); err != nil {
+		http.Redirect(w, r, "/profile?notify=error", http.StatusSeeOther)
+		return
+	}
+	if chatID == nil || *chatID == 0 {
+		http.Redirect(w, r, "/profile?notify=notlinked", http.StatusSeeOther)
+		return
+	}
+	if _, err := h.DB.Exec(ctx, `update users set telegram_notify = $2 where id = $1::uuid`, uid, enabled); err != nil {
+		http.Redirect(w, r, "/profile?notify=error", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/profile?notify=updated", http.StatusSeeOther)
+}
 func (h *UserProfileHandler) fetchUserOptions(ctx context.Context) ([]profileUserOption, error) {
 	rows, err := h.DB.Query(ctx, `
 		select username, display_name

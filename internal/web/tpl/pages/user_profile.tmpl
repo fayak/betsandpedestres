@@ -86,6 +86,20 @@
             <span id="copyNotice" class="muted" style="display:none;">Copied to clipboard ✓</span>
             {{if not .Content.Target.TelegramChatID}}
               <span class="pill" style="border-color:#f97316; color:#fdba74;">No Telegram linked — you won’t be able to recover this account if you lose your password.</span>
+            {{else}}
+              {{if eq .Content.NotifyUpdateStatus "updated"}}
+                <span class="pill strong">Notification preference saved.</span>
+              {{else if eq .Content.NotifyUpdateStatus "error"}}
+                <span class="pill" style="border-color:#f87171; color:#fca5a5;">Could not update notifications.</span>
+              {{end}}
+              <form method="POST" action="/profile" data-no-pjax class="row" style="flex-direction:column; gap:8px; align-items:flex-start;">
+                <input type="hidden" name="action" value="notify">
+                <label style="display:flex; align-items:center; gap:8px;">
+                  <input type="checkbox" name="enabled" {{if .Content.Target.TelegramNotify}}checked{{end}}>
+                  <span>Send Telegram DM notifications (bets, wagers, comments)</span>
+                </label>
+                <button class="pill" style="border-radius:8px;">Save preference</button>
+              </form>
             {{end}}
           </p>
         </div>

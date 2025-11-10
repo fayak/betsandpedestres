@@ -164,6 +164,7 @@ func (h *BetWagerCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		link := betLink(h.BaseURL, betID)
 		groupMsg := formatWagerGroupMessage(bettorName, amount, betTitle, optionLabel, link, totalStakes)
 		h.Notifier.NotifyGroup(r.Context(), groupMsg)
+		h.Notifier.NotifySubscribers(r.Context(), groupMsg)
 	}
 
 	http.Redirect(w, r, "/bets/"+betID+"?note=placed", http.StatusSeeOther)

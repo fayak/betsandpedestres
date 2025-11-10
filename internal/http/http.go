@@ -43,6 +43,7 @@ func NewMux(db *pgxpool.Pool, cfg *config.Config) (*http.ServeMux, error) {
 	mux.Handle("POST /register", &AccountRegisterHandler{DB: db, Notifier: notifier, Limiter: registerLimiter})
 	profileHandler := &UserProfileHandler{DB: db, TPL: rend, Notifier: notifier}
 	mux.Handle("GET /profile", profileHandler)
+	mux.Handle("POST /profile", profileHandler)
 	mux.Handle("GET /profile/{username}", profileHandler)
 	mux.Handle("POST /profile/{username}", profileHandler)
 	mux.Handle("GET /hof", &HallOfFameHandler{DB: db, TPL: rend})

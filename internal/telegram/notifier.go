@@ -132,3 +132,28 @@ func sendMessage(ctx context.Context, client *http.Client, token, chatID, msg st
 		}
 	}
 }
+
+func (n *Notifier) NotifySubscribers(ctx context.Context, msg string) {
+	if n == nil || n.botToken == "" {
+		return
+	}
+	rows, err := n.db.Query(ctx, `
+		select telegram_chat_id::text
+		from users
+		where telegram_chat_id is not null and telegram_notify
+	`)
+	if err != nil {
+		slog.Warn("telegram.subscribers_query_failed", "err", err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var chatID string
+		if err := rows.Scan(&chatID); err != nil {
+			slog.Warn("telegram.scan_chat_id", "err", err)
+			continue
+		}
+		sendMessage(ctx, nil, n.botToken, chatID, msg)
+	}
+}

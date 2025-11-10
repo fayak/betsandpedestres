@@ -111,6 +111,7 @@ func (h *BetCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		author := fetchDisplayName(ctx, h.DB, uid)
 		message := formatNewBetGroupMessage(form, author, link)
 		h.Notifier.NotifyGroup(r.Context(), message)
+		h.Notifier.NotifySubscribers(r.Context(), message)
 		h.Notifier.NotifyUser(r.Context(), uid, fmt.Sprintf("Your bet \"%s\" is live!\n%s", form.Title, link))
 	}
 

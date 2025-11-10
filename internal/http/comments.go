@@ -262,4 +262,5 @@ func (h *CommentCreateHandler) notifyComment(ctx context.Context, betID, userID,
 		html.EscapeString(commentLink),
 	)
 	h.Notifier.NotifyGroup(ctx, msg)
+	h.Notifier.NotifySubscribers(ctx, msg)
 }
