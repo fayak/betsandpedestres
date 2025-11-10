@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	_ "time/tzdata"
+
 	"betsandpedestres/internal/auth"
 	"betsandpedestres/internal/config"
 	"betsandpedestres/internal/db"
