@@ -157,7 +157,7 @@
     {{end}}
   {{end}}
 
-  <form id="wagerForm" method="POST" action="/bets/{{.Content.BetID}}/wagers" style="display:grid; gap:16px; max-width:860px">
+  <form id="wagerForm" method="POST" action="/bets/{{.Content.BetID}}/wagers" style="display:grid; gap:24px;">
     <div class="opt-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
       {{range .Content.Options}}
         <label class="opt-card bet-option-card{{if or (not $.Content.CanWager) $.Content.AlreadyClosed}} disabled{{end}}" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#2a2e39{{end}}; padding:12px; cursor:pointer; background:linear-gradient(120deg, rgba(44,68,112,0.45) {{.Percent}}%, rgba(15,17,23,0.82) {{.Percent}}%);">
