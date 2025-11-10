@@ -111,7 +111,7 @@
       {{range .Content.Options}}
         <label class="opt-card bet-option-card" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#b91c1c{{end}}; padding:12px; cursor:pointer; background:linear-gradient(120deg, rgba(54,79,132,0.45) {{.Percent}}%, rgba(15,17,23,0.85) {{.Percent}}%);">
           <div class="opt-main">
-            <div style="font-weight:600">{{.Label}}</div>
+            <div style="font-weight:600; color:var(--accent);">{{.Label}}</div>
             <div class="row" style="gap:10px; flex-wrap:wrap;">
               <span class="pill">🦶 Stakes: {{.Stakes}} PiedPièces</span>
               <span class="pill">Ratio: {{.Ratio}}</span>
@@ -162,7 +162,7 @@
       {{range .Content.Options}}
         <label class="opt-card bet-option-card{{if or (not $.Content.CanWager) $.Content.AlreadyClosed}} disabled{{end}}" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#2a2e39{{end}}; padding:12px; cursor:pointer; background:linear-gradient(120deg, rgba(44,68,112,0.45) {{.Percent}}%, rgba(15,17,23,0.82) {{.Percent}}%);">
           <div class="opt-main">
-            <div style="font-weight:600">{{.Label}}</div>
+            <div style="font-weight:600; color:var(--accent);">{{.Label}}</div>
             <div class="row" style="gap:10px; flex-wrap:wrap;">
               <span class="pill">🦶 Stakes: {{.Stakes}} PiedPièces</span>
               <span class="pill">Ratio: {{.Ratio}}</span>
