@@ -205,6 +205,7 @@ func parseLocalDeadline(value, tz string) (time.Time, error) {
 		if t, err := time.ParseInLocation(layout, value, loc); err == nil {
 			return t, nil
 		}
+		slog.Warn("Invalid deadline submitted", "deadline", value, "tz", tz, "error", err)
 	}
 	return time.Time{}, errInvalidDeadline
 }
