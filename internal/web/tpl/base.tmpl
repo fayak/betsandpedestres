@@ -49,6 +49,8 @@
     .card-strip::before{content:"";position:absolute;inset:0;border:1px solid rgba(192,132,252,0.2);border-radius:inherit;pointer-events:none}
     .filter-bar{display:flex;gap:14px;flex-wrap:wrap;padding:14px 16px;margin:12px 0;background:rgba(12,14,22,0.85);border-radius:8px;border:1px solid var(--stroke)}
     .filter-bar label{min-width:160px}
+    .bet-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));}
+    @media (min-width:1400px){.bet-grid{grid-template-columns:repeat(4,minmax(0,1fr));}}
     a{color:var(--accent-2);text-decoration:none}
     a[class=pill]{color:var(--accent);}
     a:hover{color:#f5c3ff}

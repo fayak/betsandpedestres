@@ -97,7 +97,7 @@
     <span class="muted">Times shown in <span class="js-tz">your timezone</span></span>
   </form>
 
-  <div style="display:grid; gap:16px;">
+  <div class="bet-grid">
     {{range .Content.Rows}}
       {{- $bet := . -}}
       <div class="accent-panel card-strip" style="border-radius:10px; border:1px solid #1c2231; padding:16px; background:linear-gradient(135deg,rgba(13,16,26,0.95),rgba(11,13,20,0.92)); display:flex; flex-direction:column; gap:10px;">
