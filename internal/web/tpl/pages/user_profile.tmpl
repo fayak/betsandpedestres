@@ -5,15 +5,15 @@
 {{define "content"}}
   <h1>{{.Content.Title}}</h1>
   {{if .Content.ViewingOther}}
-    <div class="pill" style="background:#1f2937; border:1px solid #3b82f6; margin-bottom:12px;">
+    <div class="pill strong" style="margin-bottom:12px; border-radius:10px;">
       You are viewing another user's profile.
     </div>
   {{end}}
 
   {{if .Content.ShowUserPicker}}
-    <div style="margin-bottom:16px;">
+    <div class="accent-panel soft" style="margin-bottom:18px; padding:16px; border-radius:10px; border:1px solid #1f2636;">
       <label>
-        <div class="muted" style="margin-bottom:4px;">Jump to another profile</div>
+        <div style="margin-bottom:6px;">Jump to another profile</div>
         <select onchange="if(this.value) window.location = '/profile/' + this.value;">
           <option value="">Select a user…</option>
           {{range .Content.UserOptions}}
@@ -24,20 +24,20 @@
     </div>
   {{end}}
 
-  <section style="display:grid; gap:12px; margin-bottom:16px;">
-    <div style="border:1px solid #2a2e39; border-radius:12px; padding:12px;">
-      <h2 style="margin-top:0;">Account</h2>
-      <p><strong>Username:</strong> {{.Content.Target.Username}}</p>
-      <p><strong>Display name:</strong> {{.Content.Target.DisplayName}}</p>
-      <p><strong>Role:</strong> {{.Content.Target.Role}}</p>
-      <p><strong>Joined:</strong> <span class="dt" data-iso="{{.Content.Target.JoinedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span></p>
+  <section class="accent-panel card-strip" style="display:grid; gap:16px; margin-bottom:24px; border-radius:12px; border:1px solid #1c2231; padding:20px;">
+    <div style="border:1px solid #262c3f; border-radius:10px; padding:16px; background:rgba(13,16,24,0.9);">
+      <h2 style="margin-top:0; letter-spacing:.05em; text-transform:uppercase; font-size:1rem; color:var(--accent-2);">Account</h2>
+      <div class="row" style="flex-wrap:wrap; gap:12px;">
+        <span class="pill">Username: <strong>{{.Content.Target.Username}}</strong></span>
+        <span class="pill">Display name: <strong>{{.Content.Target.DisplayName}}</strong></span>
+        <span class="pill">Role: <strong>{{.Content.Target.Role}}</strong></span>
+        <span class="pill">Joined: <span class="dt" data-iso="{{.Content.Target.JoinedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span></span>
+      </div>
       {{if eq .Content.RoleUpdateStatus "updated"}}
-        <div class="pill" style="background:#1f3d2b; border:1px solid #4ade80; margin:8px 0;">
-          Role updated.
-        </div>
+        <div class="pill strong" style="margin:12px 0;">Role updated.</div>
       {{end}}
       {{if .Content.CanEditRoles}}
-        <form method="POST" action="/profile/{{.Content.Target.Username}}" class="row" style="gap:8px; align-items:flex-end; flex-wrap:wrap;">
+        <form method="POST" action="/profile/{{.Content.Target.Username}}" class="row" style="gap:12px; align-items:flex-end; flex-wrap:wrap; margin-top:12px;">
           <label>
             <div>Set role</div>
             <select name="role">
@@ -47,53 +47,55 @@
               <option value="admin" {{if eq .Content.Target.Role "admin"}}selected{{end}}>Admin</option>
             </select>
           </label>
-          <button class="pill">Update</button>
-      </form>
+          <button class="primary" style="border-radius:8px;">Update</button>
+        </form>
       {{end}}
     </div>
-    <div style="border:1px solid #2a2e39; border-radius:12px; padding:12px;">
-      <h2 style="margin-top:0;">Wallet</h2>
-      <p style="font-size:1.2em; margin:0;">
-        🦶 {{.Content.Wallet.Balance}} PiedPièces
-        {{if .Content.Wallet.Escrow}}
-          <span class="muted">(+ {{.Content.Wallet.Escrow}} in escrow)</span>
-        {{end}}
-      </p>
-    </div>
-    {{if .Content.ShowTelegram}}
-      <div style="border:1px solid #2a2e39; border-radius:12px; padding:12px;">
-        <h2 style="margin-top:0;">Telegram</h2>
-        <p><strong>Chat ID:</strong>
-          {{if .Content.Target.TelegramChatID}}
-            {{.Content.Target.TelegramChatID}}
-          {{else}}
-            <span class="muted">&lt;none&gt;</span>
+    <div style="display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
+      <div class="accent-panel soft" style="border-radius:10px; border:1px solid #1f2636; padding:16px;">
+        <h2 style="margin-top:0; font-size:1rem; letter-spacing:.05em; text-transform:uppercase; color:var(--accent);">Wallet</h2>
+        <p style="font-size:1.3em; margin:0;">
+          🦶 {{.Content.Wallet.Balance}} PiedPièces
+          {{if .Content.Wallet.Escrow}}
+            <span class="muted" style="font-size:0.8em;">(+ {{.Content.Wallet.Escrow}} in escrow)</span>
           {{end}}
         </p>
-        <p><strong>Your user ID:</strong> <code>{{.Content.Target.ID}}</code></p>
-        <p class="muted" style="display:flex; flex-direction:column; gap:6px;">
-          Send this command to
-          <a href="https://t.me/betsandpedestres_bot" target="_blank" rel="noopener">@betsandpedestres_bot</a>:
-          <span style="display:inline-flex; align-items:center; gap:8px;">
-            <span class="pill" style="background:#4b2e22; border:1px solid #f97316; color:#fbd38d; font-family:monospace;">
-              /register {{.Content.Target.ID}}
-            </span>
-            <button type="button" class="pill" style="background:#f97316; border:0; color:#1f1f1f;" onclick="copyRegisterCommand('{{.Content.Target.ID}}')">
-              Copy
-            </button>
-          </span>
-          <span id="copyNotice" class="muted" style="display:none;">Copied to clipboard ✓</span>
-        </p>
       </div>
-    {{end}}
+      {{if .Content.ShowTelegram}}
+        <div class="accent-panel soft" style="border-radius:10px; border:1px solid #1f2636; padding:16px;">
+          <h2 style="margin-top:0; font-size:1rem; letter-spacing:.05em; text-transform:uppercase; color:var(--accent);">Telegram</h2>
+          <p><strong>Chat ID:</strong>
+            {{if .Content.Target.TelegramChatID}}
+              {{.Content.Target.TelegramChatID}}
+            {{else}}
+              <span class="muted">&lt;none&gt;</span>
+            {{end}}
+          </p>
+          <p><strong>Your user ID:</strong> <code>{{.Content.Target.ID}}</code></p>
+          <p class="muted" style="display:flex; flex-direction:column; gap:8px;">
+            Send this command to
+            <a href="https://t.me/betsandpedestres_bot" target="_blank" rel="noopener">@betsandpedestres_bot</a>:
+            <span style="display:inline-flex; align-items:center; gap:8px;">
+              <span class="pill" style="background:#3b1f38; border:1px solid #f472b6; color:#fbd6ff; font-family:monospace;">
+                /register {{.Content.Target.ID}}
+              </span>
+              <button type="button" class="pill" style="background:#f472b6; border:0; color:#1f1f1f;" onclick="copyRegisterCommand('{{.Content.Target.ID}}')">
+                Copy
+              </button>
+            </span>
+            <span id="copyNotice" class="muted" style="display:none;">Copied to clipboard ✓</span>
+          </p>
+        </div>
+      {{end}}
+    </div>
   </section>
 
-  <section style="margin-bottom:24px;">
-    <h2>Active bets (created)</h2>
+  <section class="accent-panel card-strip" style="margin-bottom:24px; padding:20px; border-radius:12px; border:1px solid #1c2231;">
+    <h2 style="margin-top:0; letter-spacing:.05em; text-transform:uppercase;">Active bets (created)</h2>
     {{if .Content.ActiveBets}}
-      <div style="display:grid; gap:10px;">
+      <div style="display:grid; gap:12px;">
         {{range .Content.ActiveBets}}
-          <div style="border:1px solid #2a2e39; border-radius:10px; padding:10px;">
+          <div style="border:1px solid #252b3b; border-radius:10px; padding:12px; background:rgba(11,13,20,0.85);">
             <div class="row" style="justify-content:space-between; gap:12px;">
               <strong><a href="/bets/{{.ID}}">{{.Title}}</a></strong>
               <span class="muted">Created <span class="dt" data-iso="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span></span>
@@ -110,12 +112,12 @@
     {{end}}
   </section>
 
-  <section style="margin-bottom:24px;">
-    <h2>Active wagers</h2>
+  <section class="accent-panel card-strip" style="margin-bottom:24px; padding:20px; border-radius:12px; border:1px solid #1c2231;">
+    <h2 style="margin-top:0; letter-spacing:.05em; text-transform:uppercase;">Active wagers</h2>
     {{if .Content.ActiveWagers}}
-      <div style="display:grid; gap:10px;">
+      <div style="display:grid; gap:12px;">
         {{range .Content.ActiveWagers}}
-          <div style="border:1px solid #2a2e39; border-radius:10px; padding:10px; display:flex; justify-content:space-between; gap:12px;">
+          <div style="border:1px solid #252b3b; border-radius:10px; padding:12px; display:flex; justify-content:space-between; gap:12px; background:rgba(11,13,20,0.85);">
             <div>
               <strong><a href="/bets/{{.BetID}}">{{.BetTitle}}</a></strong>
               <div class="muted">Deadline: {{if .Deadline}}<span class="dt" data-iso="{{.Deadline.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span>{{else}}—{{end}}</div>
@@ -129,27 +131,27 @@
     {{end}}
   </section>
 
-  <section>
-    <h2>Recent transactions</h2>
+  <section class="accent-panel card-strip" style="padding:20px; border-radius:12px; border:1px solid #1c2231;">
+    <h2 style="margin-top:0; letter-spacing:.05em; text-transform:uppercase;">Recent transactions</h2>
     {{if .Content.Transactions}}
-      <div style="overflow-x:auto;">
-        <table style="width:100%; border-collapse:collapse;">
+      <div style="overflow:auto; border:1px solid #252b3b; border-radius:10px;">
+        <table style="width:100%; border-collapse:collapse; min-width:600px;">
           <thead>
-            <tr style="text-align:left;">
-              <th style="padding:6px;">Date</th>
-              <th style="padding:6px;">Details</th>
-              <th style="padding:6px; text-align:right;">Amount</th>
+            <tr style="text-align:left; background:rgba(13,16,24,0.9);">
+              <th style="padding:10px; font-size:0.8rem; letter-spacing:.08em; text-transform:uppercase;">Date</th>
+              <th style="padding:10px; font-size:0.8rem; letter-spacing:.08em; text-transform:uppercase;">Details</th>
+              <th style="padding:10px; text-align:right; font-size:0.8rem; letter-spacing:.08em; text-transform:uppercase;">Amount</th>
             </tr>
           </thead>
           <tbody>
             {{range .Content.Transactions}}
-              <tr style="border-top:1px solid #2a2e39;">
-                <td style="padding:6px;"><span class="dt" data-iso="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span></td>
-                <td style="padding:6px;">
+              <tr style="border-top:1px solid #1f2636; background:rgba(8,9,15,0.6);">
+                <td style="padding:10px;"><span class="dt" data-iso="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span></td>
+                <td style="padding:10px;">
                   <div><strong>{{.Reason}}</strong>{{if .BetTitle}} · {{.BetTitle}}{{end}}</div>
                   {{if .Note}}<div class="muted">{{.Note}}</div>{{end}}
                 </td>
-                <td style="padding:6px; text-align:right; font-weight:bold; color:{{if gt .Delta 0}}#4caf50{{else}}#e57373{{end}};">
+                <td style="padding:10px; text-align:right; font-weight:bold; color:{{if gt .Delta 0}}#4ade80{{else}}#f87171{{end}};">
                   {{if gt .Delta 0}}+{{end}}{{.Delta}}
                 </td>
               </tr>

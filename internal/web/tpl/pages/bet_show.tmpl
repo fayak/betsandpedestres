@@ -9,7 +9,7 @@
     .resolve-link:hover {background:#7f1d1d; border-color:#fecaca;}
     .resolve-link.admin-link {background:#0f172a; border-color:#38bdf8; color:#e0f2fe; box-shadow:0 0 12px rgba(56,189,248,0.25);}
     .resolve-link.admin-link:hover {background:#172033; border-color:#7dd3fc;}
-    .bet-option-card {transition:background 0.2s ease, border-color 0.2s ease; display:flex; gap:16px; align-items:stretch;}
+    .bet-option-card {transition:background 0.2s ease, border-color 0.2s ease; display:flex; gap:16px; align-items:stretch; border-radius:8px;}
     .bet-option-card.disabled {opacity:0.6; cursor:not-allowed;}
     .opt-main {flex:1; display:flex; flex-direction:column; gap:8px; min-width:0;}
     .opt-radio-wrap {display:flex; align-items:center; justify-content:center; min-width:30px;}
@@ -19,7 +19,7 @@
     .bet-radio:checked::after {content:"";display:block;width:14px;height:14px;margin-left: -2px;background:#e2e8f0;}
     .bet-radio:focus-visible {outline:none;border-color:#93c5fd;box-shadow:0 0 0 2px rgba(147,197,253,0.35);}   
     .bet-radio:disabled {opacity:0.35; cursor:not-allowed; box-shadow:none; border-color:#475569;}
-    .wager-box {background:linear-gradient(180deg,#0f172a,#111827); border:1px solid #1f2937; border-radius:18px; padding:18px; margin-top:4px; box-shadow:0 10px 30px rgba(0,0,0,0.35);}
+    .wager-box {background:linear-gradient(135deg,rgba(13,16,26,0.9),rgba(12,13,20,0.85)); border:1px solid #1f2937; border-radius:10px; padding:18px; margin-top:4px; box-shadow:0 15px 35px rgba(0,0,0,0.35);}
     .amount-input-wrap {display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start;}
     .amount-input-wrap input[type="number"] {padding:10px 12px; font-size:1.1rem; border-radius:12px; border:1px solid #475569; background:#0b1120; color:#f8fafc;}
     .wager-slider {width:100%; margin:12px 0; accent-color:#38bdf8;}
@@ -109,7 +109,7 @@
     {{end}}
     <div class="opt-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
       {{range .Content.Options}}
-        <label class="opt-card bet-option-card" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#b91c1c{{end}}; border-radius:12px; padding:12px; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
+        <label class="opt-card bet-option-card" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#b91c1c{{end}}; padding:12px; cursor:pointer; background:linear-gradient(120deg, rgba(54,79,132,0.45) {{.Percent}}%, rgba(15,17,23,0.85) {{.Percent}}%);">
           <div class="opt-main">
             <div style="font-weight:600">{{.Label}}</div>
             <div class="row" style="gap:10px; flex-wrap:wrap;">
@@ -160,7 +160,7 @@
   <form id="wagerForm" method="POST" action="/bets/{{.Content.BetID}}/wagers" style="display:grid; gap:16px; max-width:860px">
     <div class="opt-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
       {{range .Content.Options}}
-        <label class="opt-card bet-option-card{{if or (not $.Content.CanWager) $.Content.AlreadyClosed}} disabled{{end}}" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#2a2e39{{end}}; border-radius:12px; padding:12px; cursor:pointer; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.8) {{.Percent}}%);">
+        <label class="opt-card bet-option-card{{if or (not $.Content.CanWager) $.Content.AlreadyClosed}} disabled{{end}}" style="border:2px solid {{if .SelectedByMe}}#4ade80{{else}}#2a2e39{{end}}; padding:12px; cursor:pointer; background:linear-gradient(120deg, rgba(44,68,112,0.45) {{.Percent}}%, rgba(15,17,23,0.82) {{.Percent}}%);">
           <div class="opt-main">
             <div style="font-weight:600">{{.Label}}</div>
             <div class="row" style="gap:10px; flex-wrap:wrap;">
@@ -188,7 +188,7 @@
     </div>
 
     {{if and $.Content.CanWager (not $.Content.AlreadyClosed)}}
-      <div class="wager-box">
+      <div class="wager-box accent-panel soft">
         <div class="amount-input-wrap">
           <div style="flex:1; min-width:220px;">
             <label for="amount" style="font-weight:600; display:block; margin-bottom:6px;">Amount to wager</label>

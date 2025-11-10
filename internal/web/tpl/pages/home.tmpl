@@ -52,7 +52,7 @@
       </div>
     </section>
   {{else}}
-  <form method="GET" action="/" class="row" style="gap:12px; margin:12px 0; flex-wrap:wrap">
+  <form method="GET" action="/" class="filter-bar accent-panel soft">
     <label>Sort
       <select name="sort" onchange="this.form.submit()">
         {{range .Content.SortChoices}}
@@ -97,19 +97,19 @@
     <span class="muted">Times shown in <span class="js-tz">your timezone</span></span>
   </form>
 
-  <div style="display:grid; gap:12px;">
+  <div style="display:grid; gap:16px;">
     {{range .Content.Rows}}
-      <div style="border:1px solid #2a2e39; border-radius:12px; padding:14px; background:#13151a; display:flex; flex-direction:column; gap:10px;">
+      <div class="accent-panel card-strip" style="border-radius:10px; border:1px solid #1c2231; padding:16px; background:linear-gradient(135deg,rgba(13,16,26,0.95),rgba(11,13,20,0.92)); display:flex; flex-direction:column; gap:10px;">
         <div class="row" style="justify-content:space-between; align-items:flex-start; gap:12px;">
           <div>
             <h3 style="margin:0"><a href="/bets/{{.ID}}">{{.Title}}</a></h3>
           </div>
-          <span class="pill" style="background:{{.StatusColor}}; color:#fff; border:none; font-size:0.85em;">{{.StatusLabel}}</span>
+          <span class="pill strong" style="background:{{.StatusColor}}; color:#fff; border:none; font-size:0.85em;">{{.StatusLabel}}</span>
         </div>
 
         <div style="display:flex; flex-direction:column; gap:6px;">
           {{range .Options}}
-            <div style="border:1px solid #2a2e39; border-radius:8px; padding:8px; background:linear-gradient(90deg, rgba(44,68,112,0.5) {{.Percent}}%, rgba(15,17,23,0.7) {{.Percent}}%); display:flex; justify-content:space-between; align-items:center;">
+            <div style="border:1px solid #202637; border-radius:6px; padding:8px; background:linear-gradient(90deg, rgba(192,132,252,0.18) {{.Percent}}%, rgba(13,15,24,0.85) {{.Percent}}%); display:flex; justify-content:space-between; align-items:center;">
               <span>{{.Label}}</span>
               <strong>{{.Percent}}%</strong>
             </div>
