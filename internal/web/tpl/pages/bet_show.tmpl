@@ -360,7 +360,7 @@
 {{end}}
 
 {{define "comment-item"}}
-  <article id="comment-{{.ID}}" style="border-left:3px solid rgba(255,255,255,0.08); padding-left:14px; margin-left:1.5rem;">
+  <article id="comment-{{.ID}}" style="border-left:3px solid rgba(255,255,255,0.08); padding-left:14px; margin-left:{{mul .Depth 1.5}}rem;">
     <div class="row" style="justify-content:space-between; gap:12px; flex-wrap:wrap;">
       <div>
         <strong>

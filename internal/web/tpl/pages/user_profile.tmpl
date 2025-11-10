@@ -84,10 +84,46 @@
               </button>
             </span>
             <span id="copyNotice" class="muted" style="display:none;">Copied to clipboard ✓</span>
+            {{if not .Content.Target.TelegramChatID}}
+              <span class="pill" style="border-color:#f97316; color:#fdba74;">No Telegram linked — you won’t be able to recover this account if you lose your password.</span>
+            {{end}}
           </p>
         </div>
       {{end}}
     </div>
+    {{if not .Content.ViewingOther}}
+      <div class="accent-panel soft" style="border-radius:10px; border:1px solid #1f2636; padding:16px;">
+        <h2 style="margin-top:0; font-size:1rem; letter-spacing:.05em; text-transform:uppercase; color:var(--accent);">Change password</h2>
+        {{if eq .Content.PasswordUpdateStatus "updated"}}
+          <div class="pill strong" style="margin-bottom:10px;">Password updated.</div>
+        {{else if eq .Content.PasswordUpdateStatus "invalid"}}
+          <div class="pill" style="margin-bottom:10px; border-color:#f87171; color:#fca5a5;">Current password incorrect.</div>
+        {{else if eq .Content.PasswordUpdateStatus "mismatch"}}
+          <div class="pill" style="margin-bottom:10px; border-color:#f87171; color:#fca5a5;">New passwords do not match.</div>
+        {{else if eq .Content.PasswordUpdateStatus "weak"}}
+          <div class="pill" style="margin-bottom:10px; border-color:#f87171; color:#fca5a5;">Password must be at least 6 characters.</div>
+        {{else if eq .Content.PasswordUpdateStatus "missing"}}
+          <div class="pill" style="margin-bottom:10px; border-color:#f87171; color:#fca5a5;">Please fill every field.</div>
+        {{else if eq .Content.PasswordUpdateStatus "error"}}
+          <div class="pill" style="margin-bottom:10px; border-color:#f87171; color:#fca5a5;">Could not update password. Try again later.</div>
+        {{end}}
+        <form method="POST" action="/profile" data-no-pjax class="row" style="flex-direction:column; gap:10px; align-items:flex-start;">
+          <label style="width:100%;">
+            <div>Current password</div>
+            <input type="password" name="current_password" required autocomplete="current-password" style="width:100%;">
+          </label>
+          <label style="width:100%;">
+            <div>New password</div>
+            <input type="password" name="new_password" required autocomplete="new-password" style="width:100%;">
+          </label>
+          <label style="width:100%;">
+            <div>Confirm new password</div>
+            <input type="password" name="confirm_password" required autocomplete="new-password" style="width:100%;">
+          </label>
+          <button class="primary" style="border-radius:8px;">Update password</button>
+        </form>
+      </div>
+    {{end}}
   </section>
 
   <section class="accent-panel card-strip" style="margin-bottom:24px; padding:20px; border-radius:12px; border:1px solid #1c2231;">

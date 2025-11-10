@@ -45,6 +45,9 @@ func NewMux(db *pgxpool.Pool, cfg *config.Config) (*http.ServeMux, error) {
 	mux.Handle("GET /profile/{username}", profileHandler)
 	mux.Handle("POST /profile/{username}", profileHandler)
 	mux.Handle("GET /hof", &HallOfFameHandler{DB: db, TPL: rend})
+	recoverHandler := &PasswordRecoveryHandler{DB: db, TPL: rend, Notifier: notifier}
+	mux.Handle("GET /recover", recoverHandler)
+	mux.Handle("POST /recover", recoverHandler)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(resources.FS))))
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {

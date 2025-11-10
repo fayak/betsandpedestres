@@ -5,8 +5,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"betsandpedestres/internal/auth"
 	"betsandpedestres/internal/http/middleware"
 	"betsandpedestres/internal/notify"
 	"betsandpedestres/internal/web"
@@ -64,18 +66,19 @@ type profileUserOption struct {
 }
 
 type profileContent struct {
-	Title            string
-	Target           profileUserInfo
-	Wallet           profileWallet
-	ActiveBets       []profileBet
-	ActiveWagers     []profileWager
-	Transactions     []profileTransaction
-	ViewingOther     bool
-	ShowUserPicker   bool
-	UserOptions      []profileUserOption
-	CanEditRoles     bool
-	RoleUpdateStatus string
-	ShowTelegram     bool
+	Title                string
+	Target               profileUserInfo
+	Wallet               profileWallet
+	ActiveBets           []profileBet
+	ActiveWagers         []profileWager
+	Transactions         []profileTransaction
+	ViewingOther         bool
+	ShowUserPicker       bool
+	UserOptions          []profileUserOption
+	CanEditRoles         bool
+	RoleUpdateStatus     string
+	ShowTelegram         bool
+	PasswordUpdateStatus string
 }
 
 func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +105,10 @@ func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodPost {
+		if pathUsername == "" {
+			h.handlePasswordChange(w, r, uid)
+			return
+		}
 		if role != middleware.RoleAdmin {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
@@ -183,18 +190,19 @@ func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	content := profileContent{
-		Title:            "Profile of " + targetUser.DisplayName,
-		Target:           targetUser,
-		Wallet:           wallet,
-		ActiveBets:       activeBets,
-		ActiveWagers:     activeWagers,
-		Transactions:     transactions,
-		ViewingOther:     targetUsername != header.Username,
-		ShowUserPicker:   showPicker,
-		UserOptions:      userOptions,
-		RoleUpdateStatus: r.URL.Query().Get("role"),
-		CanEditRoles:     role == middleware.RoleAdmin,
-		ShowTelegram:     targetUsername == header.Username,
+		Title:                "Profile of " + targetUser.DisplayName,
+		Target:               targetUser,
+		Wallet:               wallet,
+		ActiveBets:           activeBets,
+		ActiveWagers:         activeWagers,
+		Transactions:         transactions,
+		ViewingOther:         targetUsername != header.Username,
+		ShowUserPicker:       showPicker,
+		UserOptions:          userOptions,
+		RoleUpdateStatus:     r.URL.Query().Get("role"),
+		CanEditRoles:         role == middleware.RoleAdmin,
+		ShowTelegram:         targetUsername == header.Username,
+		PasswordUpdateStatus: r.URL.Query().Get("pwd"),
 	}
 
 	page := web.Page[profileContent]{Header: header, Content: content}
@@ -337,6 +345,54 @@ func (h *UserProfileHandler) fetchTransactions(ctx context.Context, userID strin
 		return nil, err
 	}
 	return list, nil
+}
+
+func (h *UserProfileHandler) handlePasswordChange(w http.ResponseWriter, r *http.Request, uid string) {
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/profile?pwd=error", http.StatusSeeOther)
+		return
+	}
+	current := r.Form.Get("current_password")
+	newPass := strings.TrimSpace(r.Form.Get("new_password"))
+	confirm := strings.TrimSpace(r.Form.Get("confirm_password"))
+
+	if current == "" || newPass == "" || confirm == "" {
+		http.Redirect(w, r, "/profile?pwd=missing", http.StatusSeeOther)
+		return
+	}
+	if newPass != confirm {
+		http.Redirect(w, r, "/profile?pwd=mismatch", http.StatusSeeOther)
+		return
+	}
+	if len([]rune(newPass)) < 6 {
+		http.Redirect(w, r, "/profile?pwd=weak", http.StatusSeeOther)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	var currentHash string
+	if err := h.DB.QueryRow(ctx, `select password_hash from users where id = $1::uuid`, uid).Scan(&currentHash); err != nil {
+		http.Redirect(w, r, "/profile?pwd=error", http.StatusSeeOther)
+		return
+	}
+	if !auth.CheckPassword(current, currentHash) {
+		http.Redirect(w, r, "/profile?pwd=invalid", http.StatusSeeOther)
+		return
+	}
+
+	newHash, err := auth.HashPassword(newPass)
+	if err != nil {
+		http.Redirect(w, r, "/profile?pwd=error", http.StatusSeeOther)
+		return
+	}
+	if _, err := h.DB.Exec(ctx, `update users set password_hash = $2 where id = $1::uuid`, uid, newHash); err != nil {
+		http.Redirect(w, r, "/profile?pwd=error", http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/profile?pwd=updated", http.StatusSeeOther)
 }
 
 func (h *UserProfileHandler) fetchUserOptions(ctx context.Context) ([]profileUserOption, error) {

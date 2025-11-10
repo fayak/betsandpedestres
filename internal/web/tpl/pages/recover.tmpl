@@ -1,0 +1,64 @@
+{{define "recover"}}
+  {{template "base" .}}
+{{end}}
+
+{{define "content"}}
+  <h1>Account recovery</h1>
+  {{if eq .Content.Status "sent"}}
+    <div class="pill strong" style="margin-bottom:12px;">Token sent to your Telegram.</div>
+  {{else if eq .Content.Status "unknown"}}
+    <div class="pill" style="margin-bottom:12px; border-color:#f87171; color:#fca5a5;">Unknown username.</div>
+  {{else if eq .Content.Status "notlinked"}}
+    <div class="pill" style="margin-bottom:12px; border-color:#f97316; color:#fdba74;">This account is not linked to Telegram.</div>
+  {{else if eq .Content.Status "invalid"}}
+    <div class="pill" style="margin-bottom:12px; border-color:#f87171; color:#fca5a5;">Invalid token.</div>
+  {{else if eq .Content.Status "expired"}}
+    <div class="pill" style="margin-bottom:12px; border-color:#f87171; color:#fca5a5;">Token expired. Request a new one.</div>
+  {{else if eq .Content.Status "mismatch"}}
+    <div class="pill" style="margin-bottom:12px; border-color:#f87171; color:#fca5a5;">Passwords do not match.</div>
+  {{else if eq .Content.Status "weak"}}
+    <div class="pill" style="margin-bottom:12px; border-color:#f87171; color:#fca5a5;">Password must be at least 6 characters.</div>
+  {{else if eq .Content.Status "missing"}}
+    <div class="pill" style="margin-bottom:12px; border-color:#f97316; color:#fdba74;">Please fill every field.</div>
+  {{else if eq .Content.Status "error"}}
+    <div class="pill" style="margin-bottom:12px; border-color:#f87171; color:#fca5a5;">Something went wrong. Try again later.</div>
+  {{end}}
+
+  <section class="accent-panel card-strip" style="margin-bottom:24px; padding:20px; border-radius:12px; border:1px solid #1c2231;">
+    <h2 style="margin-top:0; letter-spacing:.05em; text-transform:uppercase;">Request a token</h2>
+    <p class="muted">Enter your username. We'll DM a token to your linked Telegram account.</p>
+    <form method="POST" action="/recover" data-no-pjax style="display:grid; gap:12px; max-width:360px;">
+      <input type="hidden" name="action" value="request">
+      <label>
+        <div>Username</div>
+        <input name="username" required autocomplete="username">
+      </label>
+      <button class="primary" style="border-radius:8px; width:max-content;">Send token</button>
+    </form>
+  </section>
+
+  <section class="accent-panel card-strip" style="padding:20px; border-radius:12px; border:1px solid #1c2231;">
+    <h2 style="margin-top:0; letter-spacing:.05em; text-transform:uppercase;">Reset password</h2>
+    <p class="muted">Paste the token you received on Telegram and choose a new password.</p>
+    <form method="POST" action="/recover" data-no-pjax style="display:grid; gap:12px; max-width:420px;">
+      <input type="hidden" name="action" value="reset">
+      <label>
+        <div>Username</div>
+        <input name="username" required autocomplete="username">
+      </label>
+      <label>
+        <div>Token</div>
+        <input name="token" required autocomplete="one-time-code">
+      </label>
+      <label>
+        <div>New password</div>
+        <input type="password" name="new_password" required autocomplete="new-password">
+      </label>
+      <label>
+        <div>Confirm new password</div>
+        <input type="password" name="confirm_password" required autocomplete="new-password">
+      </label>
+      <button class="primary" style="border-radius:8px; width:max-content;">Reset &amp; sign in</button>
+    </form>
+  </section>
+{{end}}
