@@ -3,18 +3,23 @@ package http
 import (
 	"context"
 	"errors"
+	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"betsandpedestres/internal/http/middleware"
+	"betsandpedestres/internal/notify"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type CommentCreateHandler struct {
-	DB *pgxpool.Pool
+	DB       *pgxpool.Pool
+	Notifier notify.Notifier
+	BaseURL  string
 }
 
 func (h *CommentCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -73,13 +78,19 @@ func (h *CommentCreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	if _, err := h.DB.Exec(ctx, `
+	var commentID string
+	if err := h.DB.QueryRow(ctx, `
 		insert into comments (bet_id, user_id, content, parent_comment_id)
 		values ($1::uuid, $2::uuid, $3, nullif($4,'')::uuid)
-	`, betID, uid, content, parentID); err != nil {
+		returning id::text
+	`, betID, uid, content, parentID).Scan(&commentID); err != nil {
 		slog.Error("comment.insert", "err", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
+	}
+
+	if h.Notifier != nil {
+		go h.notifyComment(ctx, betID, uid, commentID, content)
 	}
 
 	http.Redirect(w, r, "/bets/"+betID+"#comments", http.StatusSeeOther)
@@ -219,4 +230,36 @@ func redirectTarget(r *http.Request, betID string) string {
 		return ref
 	}
 	return "/bets/" + betID + "#comments"
+}
+
+func (h *CommentCreateHandler) notifyComment(ctx context.Context, betID, userID, commentID, content string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var displayName, betTitle string
+	if err := h.DB.QueryRow(ctx, `select display_name from users where id = $1::uuid`, userID).Scan(&displayName); err != nil {
+		return
+	}
+	if err := h.DB.QueryRow(ctx, `select title from bets where id = $1::uuid`, betID).Scan(&betTitle); err != nil {
+		return
+	}
+
+	link := betLink(h.BaseURL, betID)
+	commentLink := link + "#comment-" + commentID
+
+	truncated := content
+	if len([]rune(truncated)) > 200 {
+		runes := []rune(truncated)
+		truncated = string(runes[:200]) + "…"
+	}
+
+	msg := notify.HTMLPrefix + fmt.Sprintf(
+		"%s posted a new comment on <a href=\"%s\">%s</a>\n&gt; %s\n<a href=\"%s\">View comment</a>",
+		html.EscapeString(displayName),
+		html.EscapeString(link),
+		html.EscapeString(betTitle),
+		html.EscapeString(truncated),
+		html.EscapeString(commentLink),
+	)
+	h.Notifier.NotifyGroup(ctx, msg)
 }
