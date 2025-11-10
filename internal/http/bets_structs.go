@@ -72,13 +72,30 @@ type betShowContent struct {
 	WinningOptionID     *string
 	WinningLabel        *string
 
-	Payouts []payoutVM
+	Payouts  []payoutVM
+	Comments []commentVM
 }
 
 type payoutVM struct {
 	Name     string
 	Username string
 	Amount   int64
+}
+
+type commentVM struct {
+	ID             string
+	BetID          string
+	AuthorName     string
+	AuthorUsername *string
+	Content        string
+	Upvotes        int
+	Downvotes      int
+	CreatedAt      time.Time
+	Score          int
+	MyReaction     int
+	ParentID       *string
+	Replies        []commentVM
+	Depth          int
 }
 
 type BetShowHandler struct {

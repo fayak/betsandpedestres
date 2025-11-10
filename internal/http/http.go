@@ -33,6 +33,8 @@ func NewMux(db *pgxpool.Pool, cfg *config.Config) (*http.ServeMux, error) {
 	mux.Handle("POST /bets", &BetCreateHandler{DB: db, Notifier: notifier, BaseURL: cfg.BaseURL})
 	mux.Handle("GET /bets/{id}", &BetShowHandler{DB: db, TPL: rend, Quorum: cfg.Moderation.Quorum})
 	mux.Handle("POST /bets/{id}/wagers", &BetWagerCreateHandler{DB: db, Notifier: notifier, BaseURL: cfg.BaseURL})
+	mux.Handle("POST /bets/{id}/comments", &CommentCreateHandler{DB: db})
+	mux.Handle("POST /comments/{id}/react", &CommentReactHandler{DB: db})
 	mux.Handle("POST /bets/{id}/resolve", &BetResolveHandler{DB: db, Quorum: cfg.Moderation.Quorum, Notifier: notifier, BaseURL: cfg.BaseURL})
 	registerLimiter := middleware.NewRateLimiter(3, time.Minute)
 	loginLimiter := middleware.NewRateLimiter(10, time.Minute)

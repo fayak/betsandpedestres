@@ -236,6 +236,32 @@
     <a class="pill" href="/">Back home</a>
   </div>
 
+  <hr style="margin:30px 0; border:none; border-top:1px solid rgba(255,255,255,0.08);">
+
+  <section id="comments" style="margin-top:12px;">
+    <h3 style="margin-top:0;">Comments</h3>
+    <form method="POST" action="/bets/{{.Content.BetID}}/comments" style="display:grid; gap:10px; margin-bottom:20px;">
+      <input type="hidden" name="parent_id" value="">
+      <label>
+        <div class="muted">Share your thoughts</div>
+        <textarea name="content" rows="3" maxlength="2000" required style="width:100%; padding:10px; border-radius:8px; border:1px solid #2a3142; background:#080b14; color:var(--fg); resize:vertical;"></textarea>
+      </label>
+      <div class="row" style="gap:10px;">
+        <button class="primary" style="border-radius:8px;">Post comment</button>
+        <span class="muted" style="font-size:0.85em;">Be respectful. Markdown/HTML not supported.</span>
+      </div>
+    </form>
+
+    {{if .Content.Comments}}
+      {{$betID := .Content.BetID}}
+      <div style="display:flex; flex-direction:column; gap:18px;">
+        {{template "comment-list" .Content.Comments}}
+      </div>
+    {{else}}
+      <p class="muted">No comments yet. Be the first to react!</p>
+    {{end}}
+  </section>
+
   <script>
     // Make clicking the whole card check the radio (label+input already handles it).
     // Enforce max, sync slider/field, and prevent double-submit.
@@ -326,4 +352,47 @@
       }
     })();
   </script>
+{{end}}
+{{define "comment-list"}}
+  {{range .}}
+    {{template "comment-item" .}}
+  {{end}}
+{{end}}
+
+{{define "comment-item"}}
+  <article id="comment-{{.ID}}" style="border-left:3px solid rgba(255,255,255,0.08); padding-left:14px; margin-left:1.5rem;">
+    <div class="row" style="justify-content:space-between; gap:12px; flex-wrap:wrap;">
+      <div>
+        <strong>
+          {{if .AuthorUsername}}<a href="/profile/{{.AuthorUsername}}">{{.AuthorName}}</a>{{else}}{{.AuthorName}}{{end}}
+        </strong>
+        <span class="muted" style="font-size:0.85em;">· <span class="dt" data-iso="{{.CreatedAt.UTC.Format "2006-01-02T15:04:05Z07:00"}}"></span></span>
+      </div>
+      <span class="pill">Score: {{.Score}}</span>
+    </div>
+    <p style="white-space:pre-wrap; margin:10px 0 12px;">{{.Content}}</p>
+    <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center;">
+      <form method="POST" action="/comments/{{.ID}}/react" class="row" style="gap:8px;">
+        <button name="direction" value="up" class="pill {{if eq .MyReaction 1}}strong{{end}}" type="submit">👍 {{.Upvotes}}</button>
+        <button name="direction" value="down" class="pill {{if eq .MyReaction -1}}strong{{end}}" type="submit">👎 {{.Downvotes}}</button>
+      </form>
+      <a class="pill" href="#comment-{{.ID}}">Share</a>
+      <button type="button" class="pill" data-reply-toggle="{{.ID}}">Reply</button>
+    </div>
+    <div data-reply-box="{{.ID}}" style="display:none; margin-top:12px;">
+      <form method="POST" action="/bets/{{.BetID}}/comments" style="display:grid; gap:8px;">
+        <input type="hidden" name="parent_id" value="{{.ID}}">
+        <textarea name="content" rows="2" maxlength="2000" required style="width:100%; padding:8px; border-radius:8px; border:1px solid #2a3142; background:#080b14; color:var(--fg);"></textarea>
+        <div class="row" style="gap:8px;">
+          <button class="primary" style="border-radius:8px;">Post reply</button>
+          <button type="button" class="pill" data-reply-cancel="{{.ID}}">Cancel</button>
+        </div>
+      </form>
+    </div>
+    {{if .Replies}}
+      <div style="margin-top:12px; display:flex; flex-direction:column; gap:12px;">
+        {{template "comment-list" .Replies}}
+      </div>
+    {{end}}
+  </article>
 {{end}}

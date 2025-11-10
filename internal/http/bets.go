@@ -110,6 +110,12 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var payouts []payoutVM
 	payouts = h.computePayouts(ctx, betID, bet.WinningOption, alreadyClosed)
 
+	comments, err := h.fetchComments(ctx, betID, uid)
+	if err != nil {
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+
 	content := betShowContent{
 		BetID:             betID,
 		Title:             bet.Title,
@@ -142,6 +148,7 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		WinningOptionID:     bet.WinningOption,
 		WinningLabel:        winningLabel,
 		Payouts:             payouts,
+		Comments:            comments,
 	}
 
 	page := web.Page[betShowContent]{Header: header, Content: content}
@@ -412,4 +419,68 @@ func (h *BetShowHandler) computePayouts(ctx context.Context, betID string, winni
 		payouts = append(payouts, payoutVM{Name: t.Name, Username: t.Username, Amount: share})
 	}
 	return payouts
+}
+
+func (h *BetShowHandler) fetchComments(ctx context.Context, betID, uid string) ([]commentVM, error) {
+	rows, err := h.DB.Query(ctx, `
+		select
+			c.id::text,
+			c.content,
+			c.upvotes,
+			c.downvotes,
+			c.created_at,
+			u.display_name,
+			u.username,
+			coalesce(cr.value, 0) as my_reaction,
+			(c.upvotes - c.downvotes) as score,
+			c.parent_comment_id::text
+		from comments c
+		join users u on u.id = c.user_id
+		left join comment_reactions cr on cr.comment_id = c.id and cr.user_id = $2::uuid
+		where c.bet_id = $1::uuid
+		order by (c.upvotes - c.downvotes) desc, c.created_at desc
+	`, betID, uid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var comments []commentVM
+	for rows.Next() {
+		var c commentVM
+		var reaction int32
+		var username *string
+		var parent *string
+		if err := rows.Scan(&c.ID, &c.Content, &c.Upvotes, &c.Downvotes, &c.CreatedAt, &c.AuthorName, &username, &reaction, &c.Score, &parent); err != nil {
+			return nil, err
+		}
+		c.BetID = betID
+		c.AuthorUsername = username
+		c.MyReaction = int(reaction)
+		c.ParentID = parent
+		comments = append(comments, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	root := make([]commentVM, 0, len(comments))
+	children := make(map[string][]commentVM)
+	for _, c := range comments {
+		if c.ParentID != nil {
+			children[*c.ParentID] = append(children[*c.ParentID], c)
+		} else {
+			root = append(root, c)
+		}
+	}
+	var attach func([]commentVM, int) []commentVM
+	attach = func(list []commentVM, depth int) []commentVM {
+		for i := range list {
+			list[i].Depth = depth
+			if kids, ok := children[list[i].ID]; ok {
+				list[i].Replies = attach(kids, depth+1)
+			}
+		}
+		return list
+	}
+	return attach(root, 0), nil
 }

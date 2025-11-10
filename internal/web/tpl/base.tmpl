@@ -116,6 +116,30 @@
   }
 
   // Music toggles
+  document.addEventListener('click', (ev)=>{
+    const toggle = ev.target.closest('[data-reply-toggle]');
+    if(toggle){
+      const id = toggle.getAttribute('data-reply-toggle');
+      const box = document.querySelector(`[data-reply-box="${id}"]`);
+      if(box){
+        const isOpen = box.style.display !== 'none';
+        box.style.display = isOpen ? 'none' : 'block';
+        if(!isOpen){
+          const field = box.querySelector('textarea');
+          if(field){ field.focus(); }
+        }
+      }
+    }
+    const cancel = ev.target.closest('[data-reply-cancel]');
+    if(cancel){
+      const id = cancel.getAttribute('data-reply-cancel');
+      const box = document.querySelector(`[data-reply-box="${id}"]`);
+      if(box){
+        box.style.display = 'none';
+      }
+    }
+  });
+
   document.addEventListener('DOMContentLoaded', ()=>{
     const prefKey = 'bapMusic';
     const timeKey = 'bapMusicTime';
