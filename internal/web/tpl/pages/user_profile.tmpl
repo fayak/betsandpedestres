@@ -60,6 +60,51 @@
             <span class="muted" style="font-size:0.8em;">(+ {{.Content.Wallet.Escrow}} in escrow)</span>
           {{end}}
         </p>
+        {{if eq .Content.TransferStatus "sent"}}
+          <div class="pill strong" style="margin:10px 0;">Transfer sent successfully.</div>
+        {{else if eq .Content.TransferStatus "missing"}}
+          <div class="pill" style="margin:10px 0; border-color:#f87171; color:#fca5a5;">Pick a recipient.</div>
+        {{else if eq .Content.TransferStatus "invalid"}}
+          <div class="pill" style="margin:10px 0; border-color:#f87171; color:#fca5a5;">Enter a valid amount.</div>
+        {{else if eq .Content.TransferStatus "unknown"}}
+          <div class="pill" style="margin:10px 0; border-color:#f87171; color:#fca5a5;">Couldn’t find that user.</div>
+        {{else if eq .Content.TransferStatus "self"}}
+          <div class="pill" style="margin:10px 0; border-color:#f87171; color:#fca5a5;">You can’t send PiedPièces to yourself.</div>
+        {{else if eq .Content.TransferStatus "notenough"}}
+          <div class="pill" style="margin:10px 0; border-color:#f87171; color:#fca5a5;">Insufficient balance.</div>
+        {{else if eq .Content.TransferStatus "error"}}
+          <div class="pill" style="margin:10px 0; border-color:#f87171; color:#fca5a5;">Transfer failed. Try again later.</div>
+        {{end}}
+        {{if and (not .Content.ViewingOther) (gt (len .Content.UserOptions) 0)}}
+          <form method="POST" action="/profile" data-no-pjax style="margin-top:14px; display:flex; flex-direction:column; gap:12px;">
+            <input type="hidden" name="action" value="transfer">
+            <label>
+              <div>Recipient</div>
+              <select name="recipient" required>
+                <option value="">Select a user…</option>
+                {{range .Content.UserOptions}}
+                  {{if ne $.Content.Target.Username .Username}}
+                    <option value="{{.Username}}">{{.DisplayName}} ({{.Username}})</option>
+                  {{end}}
+                {{end}}
+              </select>
+            </label>
+            <label>
+              <div>Amount</div>
+              <input type="number" name="amount" min="1" max="{{.Content.Wallet.Balance}}" step="1" required {{if not .Content.Wallet.Balance}}disabled{{end}}>
+            </label>
+            <label>
+              <div>Note <span class="muted">(shown publicly in the Ledger)</span></div>
+              <textarea name="note" rows="2" maxlength="200" placeholder="Optional message…" {{if not .Content.Wallet.Balance}}disabled{{end}}></textarea>
+            </label>
+            <button class="primary" style="border-radius:8px;" {{if not .Content.Wallet.Balance}}disabled{{end}}>Send PiedPièces</button>
+            {{if not .Content.Wallet.Balance}}
+              <div class="muted" style="font-size:0.85em;">You need PiedPièces available to send a gift.</div>
+            {{end}}
+          </form>
+        {{else if not .Content.ViewingOther}}
+          <div class="muted" style="margin-top:12px; font-size:0.85em;">Transfers will be available once your account is verified.</div>
+        {{end}}
       </div>
       {{if .Content.ShowTelegram}}
         <div class="accent-panel soft" style="border-radius:10px; border:1px solid #1f2636; padding:16px;">

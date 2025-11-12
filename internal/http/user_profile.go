@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,6 +83,7 @@ type profileContent struct {
 	PasswordUpdateStatus string
 	DisplayUpdateStatus  string
 	NotifyUpdateStatus   string
+	TransferStatus       string
 }
 
 func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +122,8 @@ func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				h.handleDisplayChange(w, r, uid)
 			case "notify":
 				h.handleNotifyToggle(w, r, uid)
+			case "transfer":
+				h.handleTransfer(w, r, uid)
 			default:
 				http.Redirect(w, r, "/profile?pwd=error", http.StatusSeeOther)
 			}
@@ -221,6 +225,7 @@ func (h *UserProfileHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		PasswordUpdateStatus: r.URL.Query().Get("pwd"),
 		DisplayUpdateStatus:  r.URL.Query().Get("display"),
 		NotifyUpdateStatus:   r.URL.Query().Get("notify"),
+		TransferStatus:       r.URL.Query().Get("transfer"),
 	}
 
 	page := web.Page[profileContent]{Header: header, Content: content}
@@ -449,6 +454,114 @@ func (h *UserProfileHandler) handleNotifyToggle(w http.ResponseWriter, r *http.R
 		return
 	}
 	http.Redirect(w, r, "/profile?notify=updated", http.StatusSeeOther)
+}
+
+func (h *UserProfileHandler) handleTransfer(w http.ResponseWriter, r *http.Request, uid string) {
+	recipientUsername := strings.TrimSpace(strings.ToLower(r.Form.Get("recipient")))
+	if recipientUsername == "" {
+		http.Redirect(w, r, "/profile?transfer=missing", http.StatusSeeOther)
+		return
+	}
+	amountStr := strings.TrimSpace(r.Form.Get("amount"))
+	amount, err := strconv.ParseInt(amountStr, 10, 64)
+	if err != nil || amount <= 0 {
+		http.Redirect(w, r, "/profile?transfer=invalid", http.StatusSeeOther)
+		return
+	}
+	note := strings.TrimSpace(r.Form.Get("note"))
+	if len([]rune(note)) > 200 {
+		note = string([]rune(note)[:200])
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	var (
+		senderDisplay  string
+		recipientID    string
+		recipientName  string
+		recipientAcct  string
+		senderAcct     string
+		currentBalance int64
+	)
+
+	if err := h.DB.QueryRow(ctx, `select display_name from users where id = $1::uuid`, uid).Scan(&senderDisplay); err != nil {
+		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		return
+	}
+	if err := h.DB.QueryRow(ctx, `
+		select id::text, display_name
+		from users where lower(username) = $1
+	`, recipientUsername).Scan(&recipientID, &recipientName); err != nil {
+		http.Redirect(w, r, "/profile?transfer=unknown", http.StatusSeeOther)
+		return
+	}
+	if recipientID == uid {
+		http.Redirect(w, r, "/profile?transfer=self", http.StatusSeeOther)
+		return
+	}
+	if err := h.DB.QueryRow(ctx, `select id::text from accounts where user_id = $1::uuid and is_default`, uid).Scan(&senderAcct); err != nil {
+		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		return
+	}
+	if err := h.DB.QueryRow(ctx, `select id::text from accounts where user_id = $1::uuid and is_default`, recipientID).Scan(&recipientAcct); err != nil {
+		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		return
+	}
+
+	tx, err := h.DB.Begin(ctx)
+	if err != nil {
+		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		return
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	err = tx.QueryRow(ctx, `select balance from user_balances where user_id = $1::uuid for update`, uid).Scan(&currentBalance)
+	if err == pgx.ErrNoRows {
+		currentBalance = 0
+	} else if err != nil {
+		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		return
+	}
+	if amount > currentBalance {
+		http.Redirect(w, r, "/profile?transfer=notenough", http.StatusSeeOther)
+		return
+	}
+
+	var txID string
+	if err := tx.QueryRow(ctx, `
+		insert into transactions (reason, note)
+		values ('TRANSFER', nullif($1,''))
+		returning id::text
+	`, note).Scan(&txID); err != nil {
+		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		return
+	}
+	if _, err := tx.Exec(ctx, `
+		insert into ledger_entries (tx_id, account_id, delta) values
+		($1,$2,$4), ($1,$3,$5)
+	`, txID, senderAcct, recipientAcct, -amount, amount); err != nil {
+		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		return
+	}
+	tx = nil
+
+	summary := fmt.Sprintf("🦶 %d PiedPièces", amount)
+	if note != "" {
+		summary += "\nNote: " + note
+	}
+	h.Notifier.NotifyUser(ctx, uid, fmt.Sprintf("You sent %s to %s.", summary, recipientName))
+	h.Notifier.NotifyUser(ctx, recipientID, fmt.Sprintf("%s sent you %s.", senderDisplay, summary))
+
+	http.Redirect(w, r, "/profile?transfer=sent", http.StatusSeeOther)
 }
 func (h *UserProfileHandler) fetchUserOptions(ctx context.Context) ([]profileUserOption, error) {
 	rows, err := h.DB.Query(ctx, `
