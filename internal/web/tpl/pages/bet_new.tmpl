@@ -62,63 +62,72 @@
   </form>
 
   <script>
-    // ---- time zone detection (fallback Europe/Paris) ----
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Paris";
-    document.getElementById("tzLabel").textContent = tz;
-    document.getElementById("tz").value = tz;
+    (function(){
+      const tzLabel = document.getElementById("tzLabel");
+      if(!tzLabel) return;
+      const tzInput = document.getElementById("tz");
+      const tzValue = Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Paris";
+      tzLabel.textContent = tzValue;
+      if(tzInput){ tzInput.value = tzValue; }
 
-    // ---- options add/remove (2–10) ----
-    function updateOptionUI(){
-      const container = document.getElementById("options");
-      const rows = container.querySelectorAll(".row");
-      const count = rows.length;
-      document.getElementById("optCountHint").textContent = count + " outcome" + (count>1?"s":"");
-      // enable remove only if >2
-      rows.forEach(row => {
-        const btn = row.querySelector("button");
-        btn.disabled = (count <= 2);
-      });
-    }
-    window.addEventListener("load", updateOptionUI);
+      const optionsContainer = document.getElementById("options");
+      const optHint = document.getElementById("optCountHint");
 
-    function addOption(){
-      const container = document.getElementById("options");
-      const count = container.querySelectorAll(".row").length;
-      if(count >= 10) return;
-      const div = document.createElement("div");
-      div.className = "row";
-      div.innerHTML = '<input name="option" placeholder="Outcome '+(count+1)+'" required><button type="button" onclick="removeOption(this)" aria-label="Remove" title="Remove">✖</button>';
-      container.appendChild(div);
-      updateOptionUI();
-    }
-    function removeOption(btn){
-      const container = document.getElementById("options");
-      const rows = container.querySelectorAll(".row");
-      if(rows.length <= 2) return;
-      btn.parentElement.remove();
-      updateOptionUI();
-    }
-
-    // ---- convert local deadline to UTC on submit ----
-    document.getElementById("betForm").addEventListener("submit", function(e){
-      const input = document.getElementById("deadlineLocal");
-      const out = document.getElementById("deadlineUTC");
-      if(input.value){
-        // value like "2025-03-10T12:30"
-        const local = new Date(input.value); // interpreted as local
-        const iso = local.toISOString().replace(/\.\d{3}Z$/, "Z");
-        out.value = iso;
-      } else {
-        out.value = "";
+      function updateOptionUI(){
+        if(!optionsContainer || !optHint) return;
+        const rows = optionsContainer.querySelectorAll(".row");
+        const count = rows.length;
+        optHint.textContent = count + " outcome" + (count>1?"s":"");
+        rows.forEach(row => {
+          const btn = row.querySelector("button");
+          if(btn){
+            btn.disabled = (count <= 2);
+          }
+        });
       }
-      // Also flatten options into repeated fields named "option"
-      // (already using multiple inputs named "option")
-      // Ensure we still have 2–10 non-empty options:
-      const opts = Array.from(document.querySelectorAll('input[name="option"]')).map(i => i.value.trim()).filter(Boolean);
-      if(opts.length < 2){
-        e.preventDefault();
-        alert("Please add at least 2 outcomes.");
+
+      window.addOption = function(){
+        if(!optionsContainer) return;
+        const count = optionsContainer.querySelectorAll(".row").length;
+        if(count >= 10) return;
+        const div = document.createElement("div");
+        div.className = "row";
+        div.innerHTML = '<input name="option" placeholder="Outcome '+(count+1)+'" required><button type="button" onclick="removeOption(this)" aria-label="Remove" title="Remove">✖</button>';
+        optionsContainer.appendChild(div);
+        updateOptionUI();
+      };
+
+      window.removeOption = function(btn){
+        if(!optionsContainer) return;
+        const rows = optionsContainer.querySelectorAll(".row");
+        if(rows.length <= 2) return;
+        btn.parentElement.remove();
+        updateOptionUI();
+      };
+
+      updateOptionUI();
+
+      const form = document.getElementById("betForm");
+      if(form){
+        form.addEventListener("submit", function(e){
+          const input = document.getElementById("deadlineLocal");
+          const out = document.getElementById("deadlineUTC");
+          if(input && out){
+            if(input.value){
+              const local = new Date(input.value);
+              const iso = local.toISOString().replace(/\.\d{3}Z$/, "Z");
+              out.value = iso;
+            } else {
+              out.value = "";
+            }
+          }
+          const opts = Array.from(document.querySelectorAll('input[name="option"]')).map(i => i.value.trim()).filter(Boolean);
+          if(opts.length < 2){
+            e.preventDefault();
+            alert("Please add at least 2 outcomes.");
+          }
+        });
       }
-    });
+    })();
   </script>
 {{end}}
