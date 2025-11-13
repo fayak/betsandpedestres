@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -457,15 +458,21 @@ func (h *UserProfileHandler) handleNotifyToggle(w http.ResponseWriter, r *http.R
 }
 
 func (h *UserProfileHandler) handleTransfer(w http.ResponseWriter, r *http.Request, uid string) {
+	redirect := func(code, step string, err error) {
+		if err != nil {
+			slog.Warn("profile.transfer.fail", "step", step, "err", err)
+		}
+		http.Redirect(w, r, "/profile?transfer="+code, http.StatusSeeOther)
+	}
 	recipientUsername := strings.TrimSpace(strings.ToLower(r.Form.Get("recipient")))
 	if recipientUsername == "" {
-		http.Redirect(w, r, "/profile?transfer=missing", http.StatusSeeOther)
+		redirect("missing", "recipient", nil)
 		return
 	}
 	amountStr := strings.TrimSpace(r.Form.Get("amount"))
 	amount, err := strconv.ParseInt(amountStr, 10, 64)
 	if err != nil || amount <= 0 {
-		http.Redirect(w, r, "/profile?transfer=invalid", http.StatusSeeOther)
+		redirect("invalid", "amount", err)
 		return
 	}
 	note := strings.TrimSpace(r.Form.Get("note"))
@@ -486,23 +493,23 @@ func (h *UserProfileHandler) handleTransfer(w http.ResponseWriter, r *http.Reque
 	)
 
 	if err := h.DB.QueryRow(ctx, `select display_name from users where id = $1::uuid`, uid).Scan(&senderDisplay); err != nil {
-		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		redirect("error", "sender_display", err)
 		return
 	}
 	if err := h.DB.QueryRow(ctx, `
-		select id::text, display_name
-		from users where lower(username) = $1
-	`, recipientUsername).Scan(&recipientID, &recipientName); err != nil {
-		http.Redirect(w, r, "/profile?transfer=unknown", http.StatusSeeOther)
+			select id::text, display_name
+			from users where lower(username) = $1
+		`, recipientUsername).Scan(&recipientID, &recipientName); err != nil {
+		redirect("unknown", "recipient_lookup", err)
 		return
 	}
 	if recipientID == uid {
-		http.Redirect(w, r, "/profile?transfer=self", http.StatusSeeOther)
+		redirect("self", "recipient_self", nil)
 		return
 	}
 	tx, err := h.DB.Begin(ctx)
 	if err != nil {
-		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		redirect("error", "tx_begin", err)
 		return
 	}
 	defer func() {
@@ -511,12 +518,12 @@ func (h *UserProfileHandler) handleTransfer(w http.ResponseWriter, r *http.Reque
 		}
 	}()
 
-	if err := tx.QueryRow(ctx, `select id::text from accounts where user_id = $1::uuid and is_default for update`, uid).Scan(&senderAcct); err != nil {
-		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+	if senderAcct, err = ensureDefaultAccountTx(ctx, tx, uid, true); err != nil {
+		redirect("error", "sender_wallet", err)
 		return
 	}
-	if err := tx.QueryRow(ctx, `select id::text from accounts where user_id = $1::uuid and is_default`, recipientID).Scan(&recipientAcct); err != nil {
-		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+	if recipientAcct, err = ensureDefaultAccountTx(ctx, tx, recipientID, false); err != nil {
+		redirect("error", "recipient_wallet", err)
 		return
 	}
 
@@ -524,32 +531,32 @@ func (h *UserProfileHandler) handleTransfer(w http.ResponseWriter, r *http.Reque
 	if err == pgx.ErrNoRows {
 		currentBalance = 0
 	} else if err != nil {
-		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		redirect("error", "balance_lookup", err)
 		return
 	}
 	if amount > currentBalance {
-		http.Redirect(w, r, "/profile?transfer=notenough", http.StatusSeeOther)
+		redirect("notenough", "balance_check", nil)
 		return
 	}
 
 	var txID string
 	if err := tx.QueryRow(ctx, `
-		insert into transactions (reason, note)
-		values ('TRANSFER', nullif($1,''))
-		returning id::text
-	`, note).Scan(&txID); err != nil {
-		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+			insert into transactions (reason, note)
+			values ('TRANSFER', nullif($1,''))
+			returning id::text
+		`, note).Scan(&txID); err != nil {
+		redirect("error", "tx_insert", err)
 		return
 	}
 	if _, err := tx.Exec(ctx, `
-		insert into ledger_entries (tx_id, account_id, delta) values
-		($1,$2,$4), ($1,$3,$5)
-	`, txID, senderAcct, recipientAcct, -amount, amount); err != nil {
-		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+			insert into ledger_entries (tx_id, account_id, delta) values
+			($1,$2,$4), ($1,$3,$5)
+		`, txID, senderAcct, recipientAcct, -amount, amount); err != nil {
+		redirect("error", "ledger_insert", err)
 		return
 	}
 	if err := tx.Commit(ctx); err != nil {
-		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		redirect("error", "tx_commit", err)
 		return
 	}
 	tx = nil
@@ -634,4 +641,35 @@ func isValidRole(role string) bool {
 	default:
 		return false
 	}
+}
+
+func ensureDefaultAccountTx(ctx context.Context, tx pgx.Tx, userID string, lock bool) (string, error) {
+	query := `select id::text from accounts where user_id = $1::uuid and is_default`
+	if lock {
+		query += " for update"
+	}
+	var accountID string
+	err := tx.QueryRow(ctx, query, userID).Scan(&accountID)
+	if err == nil {
+		return accountID, nil
+	}
+	if err != nil && err != pgx.ErrNoRows {
+		return "", err
+	}
+	if err := tx.QueryRow(ctx, `
+		insert into accounts (user_id, name, is_default)
+		select $1::uuid, 'wallet:' || username, true
+		from users
+		where id = $1::uuid
+		on conflict (user_id, is_default) do update set name = excluded.name
+		returning id::text
+	`, userID).Scan(&accountID); err != nil {
+		return "", err
+	}
+	if lock {
+		if err := tx.QueryRow(ctx, `select id::text from accounts where id = $1::uuid for update`, accountID).Scan(&accountID); err != nil {
+			return "", err
+		}
+	}
+	return accountID, nil
 }
