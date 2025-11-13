@@ -480,8 +480,8 @@ func (h *UserProfileHandler) handleTransfer(w http.ResponseWriter, r *http.Reque
 		senderDisplay  string
 		recipientID    string
 		recipientName  string
-		recipientAcct  string
 		senderAcct     string
+		recipientAcct  string
 		currentBalance int64
 	)
 
@@ -500,15 +500,6 @@ func (h *UserProfileHandler) handleTransfer(w http.ResponseWriter, r *http.Reque
 		http.Redirect(w, r, "/profile?transfer=self", http.StatusSeeOther)
 		return
 	}
-	if err := h.DB.QueryRow(ctx, `select id::text from accounts where user_id = $1::uuid and is_default`, uid).Scan(&senderAcct); err != nil {
-		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
-		return
-	}
-	if err := h.DB.QueryRow(ctx, `select id::text from accounts where user_id = $1::uuid and is_default`, recipientID).Scan(&recipientAcct); err != nil {
-		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
-		return
-	}
-
 	tx, err := h.DB.Begin(ctx)
 	if err != nil {
 		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
@@ -520,7 +511,16 @@ func (h *UserProfileHandler) handleTransfer(w http.ResponseWriter, r *http.Reque
 		}
 	}()
 
-	err = tx.QueryRow(ctx, `select balance from user_balances where user_id = $1::uuid for update`, uid).Scan(&currentBalance)
+	if err := tx.QueryRow(ctx, `select id::text from accounts where user_id = $1::uuid and is_default for update`, uid).Scan(&senderAcct); err != nil {
+		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		return
+	}
+	if err := tx.QueryRow(ctx, `select id::text from accounts where user_id = $1::uuid and is_default`, recipientID).Scan(&recipientAcct); err != nil {
+		http.Redirect(w, r, "/profile?transfer=error", http.StatusSeeOther)
+		return
+	}
+
+	err = tx.QueryRow(ctx, `select coalesce(balance,0)::bigint from user_balances where user_id = $1::uuid`, uid).Scan(&currentBalance)
 	if err == pgx.ErrNoRows {
 		currentBalance = 0
 	} else if err != nil {
