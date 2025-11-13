@@ -94,7 +94,11 @@ func (p *Poller) fetchUpdates(ctx context.Context, offset int) ([]update, error)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Warn("telegram.poller.close", "err", err)
+		}
+	}()
 	var res updatesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return nil, err

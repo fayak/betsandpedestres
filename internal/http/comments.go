@@ -180,9 +180,10 @@ func (h *CommentReactHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 	deltaUp, deltaDown := 0, 0
 	if prevExists {
-		if prevValue == 1 {
+		switch prevValue {
+		case 1:
 			deltaUp--
-		} else if prevValue == -1 {
+		case -1:
 			deltaDown--
 		}
 		_, err = tx.Exec(ctx, `update comment_reactions set value = $3 where comment_id = $1::uuid and user_id = $2::uuid`, commentID, uid, value)
@@ -200,9 +201,10 @@ func (h *CommentReactHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	if value == 1 {
+	switch value {
+	case 1:
 		deltaUp++
-	} else if value == -1 {
+	case -1:
 		deltaDown++
 	}
 
@@ -233,14 +235,14 @@ func redirectTarget(r *http.Request, betID string) string {
 }
 
 func (h *CommentCreateHandler) notifyComment(ctx context.Context, betID, userID, commentID, content string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	notifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var displayName, betTitle string
-	if err := h.DB.QueryRow(ctx, `select display_name from users where id = $1::uuid`, userID).Scan(&displayName); err != nil {
+	if err := h.DB.QueryRow(notifyCtx, `select display_name from users where id = $1::uuid`, userID).Scan(&displayName); err != nil {
 		return
 	}
-	if err := h.DB.QueryRow(ctx, `select title from bets where id = $1::uuid`, betID).Scan(&betTitle); err != nil {
+	if err := h.DB.QueryRow(notifyCtx, `select title from bets where id = $1::uuid`, betID).Scan(&betTitle); err != nil {
 		return
 	}
 
@@ -261,6 +263,6 @@ func (h *CommentCreateHandler) notifyComment(ctx context.Context, betID, userID,
 		html.EscapeString(truncated),
 		html.EscapeString(commentLink),
 	)
-	h.Notifier.NotifyGroup(ctx, msg)
-	h.Notifier.NotifySubscribers(ctx, msg)
+	h.Notifier.NotifyGroup(notifyCtx, msg)
+	h.Notifier.NotifySubscribers(notifyCtx, msg)
 }

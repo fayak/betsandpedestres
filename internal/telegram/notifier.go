@@ -120,7 +120,11 @@ func sendMessage(ctx context.Context, client *http.Client, token, chatID, msg st
 		slog.Warn("telegram.send", "err", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Warn("telegram.send.close", "err", err)
+		}
+	}()
 	if resp.StatusCode >= 300 {
 		slog.Warn("telegram.send.status", "status", resp.Status)
 		var result struct {

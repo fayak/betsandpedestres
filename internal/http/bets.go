@@ -104,11 +104,8 @@ func (h *BetShowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		maxStake = h.userBalance(ctx, uid)
 	}
 
-	var winningLabel *string
-	winningLabel = h.winningLabel(ctx, bet.WinningOption)
-
-	var payouts []payoutVM
-	payouts = h.computePayouts(ctx, betID, bet.WinningOption, alreadyClosed)
+	winningLabel := h.winningLabel(ctx, bet.WinningOption)
+	payouts := h.computePayouts(ctx, betID, bet.WinningOption, alreadyClosed)
 
 	comments, err := h.fetchComments(ctx, betID, uid)
 	if err != nil {

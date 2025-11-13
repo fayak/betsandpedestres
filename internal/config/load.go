@@ -14,7 +14,9 @@ func Load(path string) (*Config, error) {
 		cfg.Defaults()
 		return &cfg, err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	return FromReader(f)
 }
 

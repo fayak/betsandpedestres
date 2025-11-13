@@ -5,6 +5,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -27,7 +28,11 @@ func EnsureDatabaseAndMigrate(ctx context.Context, adminConn, targetDB, owner st
 	if err != nil {
 		return fmt.Errorf("admin connect: %w", err)
 	}
-	defer admin.Close(ctx)
+	defer func() {
+		if err := admin.Close(ctx); err != nil {
+			slog.Warn("dbinit.admin.close", "err", err)
+		}
+	}()
 
 	var exists bool
 	if err := admin.QueryRow(ctx,
@@ -55,13 +60,21 @@ func EnsureDatabaseAndMigrate(ctx context.Context, adminConn, targetDB, owner st
 	if err != nil {
 		return fmt.Errorf("target connect: %w", err)
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		if err := conn.Close(ctx); err != nil {
+			slog.Warn("dbinit.target.close", "err", err)
+		}
+	}()
 
 	lockKey := int64(0x62657473) // 'bets' namespace
 	if _, err := conn.Exec(ctx, `select pg_advisory_lock($1)`, lockKey); err != nil {
 		return fmt.Errorf("advisory lock: %w", err)
 	}
-	defer conn.Exec(context.Background(), `select pg_advisory_unlock($1)`, lockKey)
+	defer func() {
+		if _, err := conn.Exec(context.Background(), `select pg_advisory_unlock($1)`, lockKey); err != nil {
+			slog.Warn("dbinit.unlock", "err", err)
+		}
+	}()
 
 	if _, err := conn.Exec(ctx, `
 		create table if not exists schema_migrations (
@@ -122,7 +135,11 @@ func RefreshBalancesMatView(ctx context.Context, targetConn string) error {
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		if err := conn.Close(ctx); err != nil {
+			slog.Warn("dbinit.refresh.close", "err", err)
+		}
+	}()
 
 	// Must be outside a transaction; pgx starts statements autocommit by default.
 	if _, err := conn.Exec(ctx, `refresh materialized view concurrently user_balances_mv`); err != nil {

@@ -219,7 +219,11 @@ func (h *BetCreateHandler) createBet(ctx context.Context, uid string, form betFo
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			slog.Warn("bet.create.rollback", "err", err)
+		}
+	}()
 
 	betID, err := h.insertBet(ctx, tx, uid, form)
 	if err != nil {

@@ -221,11 +221,12 @@ func (h *HomeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		whereOuterParts = append(whereOuterParts, `u.username = `+arg(userFilter))
 	}
 	if uid != "" && partFilter != "all" {
-		if partFilter == "me" {
+		switch partFilter {
+		case "me":
 			whereOuterParts = append(whereOuterParts, `exists (
 			select 1 from wagers w where w.bet_id = b.id and w.user_id = `+arg(uid)+`
 		)`)
-		} else if partFilter == "notme" {
+		case "notme":
 			whereOuterParts = append(whereOuterParts, `not exists (
 			select 1 from wagers w where w.bet_id = b.id and w.user_id = `+arg(uid)+`
 		)`)
